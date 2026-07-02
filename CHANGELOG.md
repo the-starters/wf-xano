@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.0 — 2026-07-03 (unreleased — not yet tagged/deployed)
+## v0.5.0 — 2026-07-03
 
 ### Changed
 
