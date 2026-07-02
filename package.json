@@ -1,6 +1,6 @@
 {
   "name": "@the-starters/wf-xano",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Declarative Xano list binder for Webflow — attribute-driven, state-heavy lists rendered straight from Xano endpoints.",
   "main": "wf-xano.js",
   "files": [
@@ -8,7 +8,8 @@
     "wf-xano.min.js"
   ],
   "scripts": {
-    "build": "terser wf-xano.js --comments '/^!/' -c -m -o wf-xano.min.js"
+    "build": "terser wf-xano.js --comments '/^!/' -c -m -o wf-xano.min.js",
+    "test": "node test/wf-xano.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -23,5 +24,8 @@
     "cms"
   ],
   "author": "The Starters",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^27.0.1"
+  }
 }

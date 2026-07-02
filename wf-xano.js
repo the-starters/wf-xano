@@ -57,7 +57,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.2.0'
+  var VERSION = '0.2.1'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -514,11 +514,20 @@
     return this.load()
   }
 
+  /** Show a state element. `wf-xano-display` (mirroring wf-algolia-display)
+   *  supplies the shown value for elements whose own class hides them —
+   *  e.g. <div wf-xano-loader wf-xano-display="flex">. Default clears the
+   *  inline style so the element's class takes over. */
+  function showStateEl(el, visible) {
+    if (!el) return
+    el.style.display = visible ? el.getAttribute('wf-xano-display') || '' : 'none'
+  }
+
   /** Toggle loader/error elements + is-wf-xano-* classes on the root so
    *  designers can style states from Webflow (Finsweet-style state classes). */
   Instance.prototype.setState = function (state) {
-    if (this.loaderEl) this.loaderEl.style.display = state === 'loading' ? '' : 'none'
-    if (this.errorEl) this.errorEl.style.display = state === 'error' ? '' : 'none'
+    showStateEl(this.loaderEl, state === 'loading')
+    showStateEl(this.errorEl, state === 'error')
     this.root.classList.toggle('is-wf-xano-loading', state === 'loading')
     this.root.classList.toggle('is-wf-xano-error', state === 'error')
     // is-wf-xano-empty is decided in render()
@@ -586,7 +595,7 @@
       c.remove()
     })
     // Empty state
-    if (this.emptyEl) this.emptyEl.style.display = result.items.length ? 'none' : ''
+    showStateEl(this.emptyEl, !result.items.length)
     this.root.classList.toggle('is-wf-xano-empty', !result.items.length)
     var self = this
     result.items.forEach(function (item) {

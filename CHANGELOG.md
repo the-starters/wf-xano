@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.1 — 2026-07-02
+
+### Added
+
+- **`wf-xano-display` on state elements** — `wf-xano-empty`, `wf-xano-loader`, and `wf-xano-error`
+  now honor `wf-xano-display` for their shown value (wf-algolia parity: markup like
+  `<div wf-xano-loader wf-xano-display="flex">` works unchanged when the element's own class hides
+  it). Default still clears the inline style.
+- **Test suite in-repo** — `npm test` runs the full jsdom suite (`test/wf-xano.test.mjs`, 14 groups).
+
 ## v0.2.0 — 2026-07-02
 
 API patterns aligned with [Finsweet Attributes](https://github.com/finsweet/attributes) conventions.

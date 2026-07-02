@@ -79,7 +79,7 @@ Add these to the elements above to tune behavior.
 | Attribute | Applies to | Description |
 | --- | --- | --- |
 | `wf-xano-format` | `wf-xano-bind` elements | `date` or `datetime` — formats timestamps with the user's locale. |
-| `wf-xano-display` | `wf-xano-if` elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
+| `wf-xano-display` | `wf-xano-if`, `wf-xano-empty`, `wf-xano-loader`, `wf-xano-error` elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
 | `wf-xano-link-prefix` / `wf-xano-link-suffix` | `wf-xano-link` elements | Wrap the field value: `prefix + value + suffix`. |
 | `wf-xano-value` | checkbox/radio filters | The real filter value — Webflow checkboxes all submit `"on"`. |
 | `wf-xano-debounce` | a `wf-xano-search` input | Per-input debounce override. |
