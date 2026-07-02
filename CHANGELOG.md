@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.5.0 — 2026-07-03 (unreleased — not yet tagged/deployed)
+
+### Changed
+
+- **Parallel cold-boot auth** — the Memberstack → Xano handshake no longer serializes
+  `getCurrentMember()` (~500ms network) → `getMemberCookie()` + trade-token (~240ms) → first list
+  request. Benchmarked 2026-07-03: this chain made wf-xano first render ~1.5s vs wf-algolia's
+  ~250–400ms. Now:
+  - The member id is read **synchronously from Memberstack's localStorage cache**
+    (`_ms-mid` / `_ms-mem`); `getCurrentMember()` is only a fallback and runs **concurrently**
+    with the cookie → token trade instead of gating it.
+  - The trade-token handshake is **pre-warmed at script-parse time** (when memberstack-x has
+    already loaded, per the documented script order), so the round-trip overlaps DOM-ready work
+    instead of the first list request. Opt out with `WfXanoConfig.preAuth = false`.
+  - **Account-switch semantics unchanged**: the cached token is still dropped whenever the member
+    id no longer matches the one it was traded under; the id is only a cache key — the token
+    always derives from the live session cookie. A failed trade no longer needs a page reload to
+    retry (the rejected handshake is not cached).
+
+### Added
+
+- `WfXanoConfig.preAuth` (default `true`) — disable the parse-time token pre-warm on pages where
+  every list is `wf-xano-auth="none"`.
+
 ## v0.4.0 — 2026-07-03
 
 ### Changed
