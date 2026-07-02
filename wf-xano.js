@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.5.0'
+  var VERSION = '0.6.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -86,7 +86,8 @@
   // attributes, so `!important` never affects rendered items.
   try {
     var foucStyle = document.createElement('style')
-    foucStyle.textContent = '[wf-xano-element="template"],[wf-xano-template]{display:none!important}'
+    foucStyle.textContent =
+      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"]{display:none!important}'
     ;(document.head || document.documentElement).appendChild(foucStyle)
   } catch (e) {
     /* non-fatal */
@@ -419,6 +420,9 @@
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.page = 1
     this.params = this.readStaticParams()
+    // Baseline for clearParams()/tag chips: static wf-xano-param-* values
+    // are configuration, not user filters.
+    this.baseParams = Object.assign({}, this.params)
     this.template = q(root, elSel('template'))
     this.emptyEl = q(root, elSel('empty'))
     this.loaderEl = q(root, elSel('loader'))
@@ -448,6 +452,8 @@
     this.ok = true
     this.template.style.display = 'none'
     root.__wfXano = this
+    this.tagTemplate = this.q(elSel('tag'))
+    if (this.tagTemplate) this.tagTemplate.style.display = 'none'
     if (this.urlSync) this.restoreFromUrl()
     this.bindControls()
     this.load()
@@ -537,15 +543,31 @@
     }
   }
 
-  /** Reflect restored params back into simple (non-checkbox) controls. */
+  /** Reflect current params into every filter/search control — text inputs
+   *  and selects get the value (or ''), checkboxes/radios get (un)checked by
+   *  whether their effective value is part of the param. Runs on URL restore
+   *  and after clearParams()/tag removal, so controls never drift from state.
+   *  Click filters are handled by the is-active pass in updateFilterUI. */
   Instance.prototype.hydrateControls = function () {
     var self = this
-    Object.keys(this.params).forEach(function (field) {
-      self.qa('[wf-xano-filter="' + field + '"], [wf-xano-search="' + field + '"]').forEach(function (el) {
-        if (el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)) return
-        if ('value' in el) el.value = self.params[field]
-      })
+    this.qa('[wf-xano-filter], [wf-xano-search]').forEach(function (el) {
+      if (el.matches('[wf-xano-element="clear"], [wf-xano-clear]')) return
+      var field = el.getAttribute('wf-xano-filter') || el.getAttribute('wf-xano-search')
+      var raw = self.params[field] != null ? String(self.params[field]) : ''
+      if (el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)) {
+        var values = raw
+          .split(',')
+          .map(function (s) {
+            return s.trim()
+          })
+          .filter(Boolean)
+        var v = el.getAttribute('wf-xano-value') || (el.value !== 'on' ? el.value : '')
+        el.checked = values.indexOf(v) > -1
+        return
+      }
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) el.value = raw
     })
+    this.updateFilterUI()
   }
 
   /* --------------------------- CONTROLS ----------------------------- */
@@ -555,16 +577,57 @@
 
     // Filters: [wf-xano-filter="field"] — re-fetch on change. Checkbox groups
     // for the same field combine into a comma-separated param.
-    var filterEls = this.qa('[wf-xano-filter]')
-    filterEls.forEach(function (el) {
+    var filterEls = this.qa('[wf-xano-filter]').filter(function (el) {
+      return !el.matches('[wf-xano-element="clear"], [wf-xano-clear]')
+    })
+    var formFilterEls = filterEls.filter(function (el) {
+      return /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)
+    })
+    formFilterEls.forEach(function (el) {
       var field = el.getAttribute('wf-xano-filter')
       el.addEventListener(
         'change',
         function () {
-          var group = filterEls.filter(function (other) {
+          var group = formFilterEls.filter(function (other) {
             return other.getAttribute('wf-xano-filter') === field
           })
           self.setParam(field, readFilterValue(field, group))
+        },
+        signal,
+      )
+    })
+    // Click filters: any NON-form element (tab, button, link, label span…)
+    // with wf-xano-filter + wf-xano-value — wf-algolia's filter-item.
+    // Empty wf-xano-value = the "All" option (clears the param). Opt into
+    // click-again-to-clear with wf-xano-toggle="true".
+    filterEls
+      .filter(function (el) {
+        return !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)
+      })
+      .forEach(function (el) {
+        el.addEventListener(
+          'click',
+          function (e) {
+            e.preventDefault()
+            var field = el.getAttribute('wf-xano-filter')
+            var value = el.getAttribute('wf-xano-value') || ''
+            var toggle = el.getAttribute('wf-xano-toggle') === 'true'
+            var current = String(self.params[field] != null ? self.params[field] : '')
+            self.setParam(field, toggle && current === value ? '' : value)
+          },
+          signal,
+        )
+      })
+    // Clear: wf-xano-element="clear" — all user filters, or one field when
+    // the element also carries wf-xano-filter="field" (Finsweet's `clear`).
+    this.qa(elSel('clear')).forEach(function (el) {
+      el.addEventListener(
+        'click',
+        function (e) {
+          e.preventDefault()
+          var field = el.getAttribute('wf-xano-filter')
+          if (field) self.setParam(field, '')
+          else self.clearParams()
         },
         signal,
       )
@@ -631,6 +694,105 @@
   Instance.prototype.goToPage = function (page) {
     this.page = page
     return this.load()
+  }
+
+  /** Current request params (copy) — wf-algolia's getFilterState equivalent. */
+  Instance.prototype.getParams = function () {
+    return Object.assign({}, this.params)
+  }
+
+  /** Reset every user filter back to the static wf-xano-param-* baseline —
+   *  wf-algolia's clearAllFilters equivalent. */
+  Instance.prototype.clearParams = function () {
+    this.params = Object.assign({}, this.baseParams)
+    this.page = 1
+    this.hydrateControls()
+    return this.load()
+  }
+
+  /** The params a user actively set (excludes the static baseline). */
+  Instance.prototype.userParams = function () {
+    var self = this
+    var out = {}
+    Object.keys(this.params).forEach(function (field) {
+      if (self.params[field] !== self.baseParams[field]) out[field] = self.params[field]
+    })
+    return out
+  }
+
+  /** Reflect filter state into the UI: `is-active` on click filters and on
+   *  checkbox/radio labels (Finsweet-style state class), then filter tags. */
+  Instance.prototype.updateFilterUI = function () {
+    var self = this
+    this.qa('[wf-xano-filter]').forEach(function (el) {
+      if (el.matches('[wf-xano-element="clear"], [wf-xano-clear]')) return
+      var field = el.getAttribute('wf-xano-filter')
+      var values = String(self.params[field] != null ? self.params[field] : '')
+        .split(',')
+        .map(function (s) {
+          return s.trim()
+        })
+        .filter(Boolean)
+      if (el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)) {
+        var v = el.getAttribute('wf-xano-value') || (el.value !== 'on' ? el.value : '')
+        var label = el.closest('label') || el
+        label.classList.toggle('is-active', values.indexOf(v) > -1)
+        return
+      }
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return
+      var value = el.getAttribute('wf-xano-value') || ''
+      var active = value === '' ? values.length === 0 : values.indexOf(value) > -1
+      el.classList.toggle('is-active', active)
+    })
+    this.renderTags()
+  }
+
+  /** Active-filter chips: clone the wf-xano-element="tag" template once per
+   *  user-set filter value; tag-field / tag-value / tag-remove children
+   *  (Finsweet's tag grammar). Removing a value drops it from its group. */
+  Instance.prototype.renderTags = function () {
+    var tmpl = this.tagTemplate
+    if (!tmpl) return
+    var self = this
+    var parent = tmpl.parentNode
+    qa(parent, '[wf-xano-tag-item]').forEach(function (c) {
+      c.remove()
+    })
+    tmpl.style.display = 'none'
+    var user = this.userParams()
+    Object.keys(user).forEach(function (field) {
+      String(user[field])
+        .split(',')
+        .map(function (s) {
+          return s.trim()
+        })
+        .filter(Boolean)
+        .forEach(function (value) {
+          var tag = tmpl.cloneNode(true)
+          clearRole(tag, 'tag')
+          tag.setAttribute('wf-xano-tag-item', '')
+          tag.style.display = ''
+          var f = q(tag, elSel('tag-field'))
+          if (f) f.textContent = field
+          var v = q(tag, elSel('tag-value'))
+          if (v) v.textContent = value
+          var remove = q(tag, elSel('tag-remove')) || tag
+          remove.addEventListener('click', function (e) {
+            e.preventDefault()
+            var rest = String(self.params[field] || '')
+              .split(',')
+              .map(function (s) {
+                return s.trim()
+              })
+              .filter(function (x) {
+                return x && x !== value
+              })
+            self.setParam(field, rest.join(','))
+            self.hydrateControls()
+          })
+          parent.appendChild(tag)
+        })
+    })
   }
 
   /** Show a state element. `wf-xano-display` (mirroring wf-algolia-display)
@@ -739,6 +901,7 @@
       el.textContent = String(to)
     })
     this.renderPagination(result)
+    this.updateFilterUI()
   }
 
   Instance.prototype.renderPagination = function (result) {

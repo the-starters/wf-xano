@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.0 — 2026-07-03
+
+### Added — filtering parity with Finsweet / wf-algolia
+
+- **Click filters** — `wf-xano-filter="field"` + `wf-xano-value` on any non-form element
+  (tabs, buttons, links). Empty value = the "All" option (clears the param);
+  `wf-xano-toggle="true"` opts into click-again-to-clear.
+- **`is-active` state class** on click filters and on checked checkbox/radio filter labels.
+- **`wf-xano-element="clear"`** — clears all user filters (static `wf-xano-param-*` kept), or
+  one field when combined with `wf-xano-filter="field"` (Finsweet's `clear`).
+- **Filter tags** — `wf-xano-element="tag"` template with `tag-field`/`tag-value`/`tag-remove`
+  children (Finsweet's tag grammar); one chip per active filter value, removal updates the group.
+- **Full control hydration** — URL restore and clears now also (un)check checkbox/radio filters
+  and refresh `is-active` state, so controls never drift from param state.
+- **JS API** — `instance.getParams()` and `instance.clearParams()` (wf-algolia's
+  `getFilterState`/`clearAllFilters` equivalents).
+
 ## v0.5.0 — 2026-07-03
 
 ### Changed
