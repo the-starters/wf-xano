@@ -57,7 +57,7 @@ These work on any descendant of the template **and on the template root itself**
 | Attribute | Value | Description |
 | --- | --- | --- |
 | `wf-xano-filter` | field name | **Form controls** (input/select): value becomes request param `field`, re-fetching on `change`. **Checkboxes** sharing a field form a group: checked values combine into a comma-separated param. **Radios** send the checked one's value. **Any other element** (tab, button, link…) becomes a click filter: clicking sends its `wf-xano-value` (empty value = the "All" option, clears the param). |
-| `wf-xano-value` | filter value | The real value for checkboxes/radios (Webflow submits `on`) and for click filters. |
+| `wf-xano-value` | filter value | The real value for checkboxes/radios (Webflow submits `on`) and for click filters. **`*` is the match-all sentinel** for "All" options — it clears the field (use it because Webflow's Designer cannot author an empty attribute value); the control shows as active/checked when no value is set. |
 | `wf-xano-toggle` | `true` | On a click filter: clicking the active option again clears it (facet-style toggle). Default is tab semantics (re-click is a no-op). |
 | `wf-xano-search` | field name | Text input, debounced → param `field`. |
 | `wf-xano-sort` | param name (optional) | Select whose value becomes the sort param. Defaults to `sort`; give the attribute a value to rename it (`wf-xano-sort="sort_by"`). |

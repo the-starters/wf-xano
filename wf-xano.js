@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.6.0'
+  var VERSION = '0.6.1'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -384,7 +384,7 @@
           var v = el.getAttribute('wf-xano-value')
           if (v == null) v = el.value !== 'on' ? el.value : ''
           if (!v) console.warn('[wf-xano] checkbox filter for "' + field + '" has no wf-xano-value')
-          return v
+          return v === '*' ? '' : v // match-all sentinel contributes nothing
         })
         .filter(Boolean)
       return values.join(',')
@@ -397,7 +397,8 @@
         return el.checked
       })[0]
       if (!checked) return ''
-      return checked.getAttribute('wf-xano-value') || (checked.value !== 'on' ? checked.value : '')
+      var rv = checked.getAttribute('wf-xano-value') || (checked.value !== 'on' ? checked.value : '')
+      return rv === '*' ? '' : rv
     }
     var el = controls[0]
     return el ? el.value : ''
@@ -562,7 +563,8 @@
           })
           .filter(Boolean)
         var v = el.getAttribute('wf-xano-value') || (el.value !== 'on' ? el.value : '')
-        el.checked = values.indexOf(v) > -1
+        // `*` = the match-all option: checked exactly when no value is set.
+        el.checked = v === '*' ? values.length === 0 : values.indexOf(v) > -1
         return
       }
       if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) el.value = raw
@@ -611,6 +613,7 @@
             e.preventDefault()
             var field = el.getAttribute('wf-xano-filter')
             var value = el.getAttribute('wf-xano-value') || ''
+            if (value === '*') value = '' // match-all sentinel
             var toggle = el.getAttribute('wf-xano-toggle') === 'true'
             var current = String(self.params[field] != null ? self.params[field] : '')
             self.setParam(field, toggle && current === value ? '' : value)
@@ -685,7 +688,9 @@
 
   /** Set/clear a request param, reset to page 1, reload. */
   Instance.prototype.setParam = function (field, value) {
-    if (value == null || value === '') delete this.params[field]
+    // `*` is the match-all sentinel (Webflow's Designer cannot author an
+    // EMPTY attribute value, so "All" options carry wf-xano-value="*").
+    if (value == null || value === '' || value === '*') delete this.params[field]
     else this.params[field] = value
     this.page = 1
     return this.load()
@@ -736,12 +741,12 @@
       if (el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)) {
         var v = el.getAttribute('wf-xano-value') || (el.value !== 'on' ? el.value : '')
         var label = el.closest('label') || el
-        label.classList.toggle('is-active', values.indexOf(v) > -1)
+        label.classList.toggle('is-active', v === '*' ? values.length === 0 : values.indexOf(v) > -1)
         return
       }
       if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return
       var value = el.getAttribute('wf-xano-value') || ''
-      var active = value === '' ? values.length === 0 : values.indexOf(value) > -1
+      var active = value === '' || value === '*' ? values.length === 0 : values.indexOf(value) > -1
       el.classList.toggle('is-active', active)
     })
     this.renderTags()

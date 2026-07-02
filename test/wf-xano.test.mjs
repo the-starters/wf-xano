@@ -595,7 +595,7 @@ const FULL_PAGE1 = {
 {
   const dom = new JSDOM(`<!doctype html><html><body>
     <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-source="g:p" wf-xano-auth="none">
-      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="">All</a>
+      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="*">All</a>
       <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Active">Open</a>
       <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Closed">Closed</a>
       <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
@@ -617,8 +617,10 @@ const FULL_PAGE1 = {
   assert.ok(!tabs[0].classList.contains('is-active'), '"All" no longer active')
   tabs[0].click()
   await waitFor(() => bodies.length === 3)
-  assert.equal(bodies[2].status, undefined, '"All" (empty value) clears the param')
-  console.log('PASS 15: click filters (tabs) + is-active')
+  assert.equal(bodies[2].status, undefined, '"All" (wf-xano-value="*") clears the param')
+  await waitFor(() => tabs[0].classList.contains('is-active'))
+  assert.ok(tabs[0].classList.contains('is-active'), '"*" tab active again after clearing')
+  console.log('PASS 15: click filters (tabs) + is-active + "*" match-all sentinel')
 }
 
 // ---------- Test 16: clear element — all filters vs one field; statics preserved ----------
@@ -694,6 +696,7 @@ const FULL_PAGE1 = {
 {
   const dom = new JSDOM(`<!doctype html><html><body>
     <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="g:p" wf-xano-auth="none">
+      <label><input type="radio" name="st" wf-xano-filter="status" wf-xano-value="*">All</label>
       <label><input type="radio" name="st" wf-xano-filter="status" wf-xano-value="Active">Open</label>
       <label><input type="radio" name="st" wf-xano-filter="status" wf-xano-value="Closed">Closed</label>
       <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Active">Open tab</a>
@@ -706,11 +709,13 @@ const FULL_PAGE1 = {
   w.eval(LIB)
   await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1)
   const radios = w.document.querySelectorAll('input[type="radio"]')
-  assert.ok(radios[0].checked, 'radio matching URL param restored checked')
-  assert.ok(!radios[1].checked, 'other radio unchecked')
-  assert.ok(radios[0].closest('label').classList.contains('is-active'), 'radio label got is-active')
+  assert.ok(!radios[0].checked, '"*" All radio unchecked while a value is set')
+  assert.ok(radios[1].checked, 'radio matching URL param restored checked')
+  assert.ok(!radios[2].checked, 'other radio unchecked')
+  assert.ok(radios[1].closest('label').classList.contains('is-active'), 'radio label got is-active')
+  assert.ok(!radios[0].closest('label').classList.contains('is-active'), '"*" label not active while filtered')
   assert.ok(w.document.querySelector('.tab').classList.contains('is-active'), 'click filter got is-active from URL state')
-  console.log('PASS 18: URL restore hydrates radios + click-filter active state')
+  console.log('PASS 18: URL restore hydrates radios (incl. "*" All) + click-filter active state')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.6.1 — 2026-07-03
+
+### Added
+
+- **`wf-xano-value="*"` match-all sentinel** — "All" filter options use `*` instead of an empty
+  value, because Webflow's Designer cannot author an empty attribute value. `*` clears the field
+  everywhere a value is read (click filters, radios, checkboxes, selects, `setParam`), and the
+  control shows as active/checked exactly when no value is set.
+
 ## v0.6.0 — 2026-07-03
 
 ### Added — filtering parity with Finsweet / wf-algolia
