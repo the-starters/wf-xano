@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wf-xano · filters, search &amp; sort example</title>
+    <style>
+      body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 0; background: #f5f5f3; color: #23281f; }
+      .wrap { max-width: 720px; margin: 40px auto; padding: 0 20px; }
+      h1 { font-size: 20px; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 16px 0; }
+      .toolbar label { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+      input[type="text"], select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 8px; }
+      .applicant-card { background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+      .applicant-card h3 { margin: 0; font-size: 15px; }
+      .applicant-card .role { color: #66705e; font-size: 13px; }
+      .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+      .pill-new { background: #dff0d8; color: #2f6b2f; }
+      .pill-seen { background: #eee; color: #777; }
+      .state { padding: 16px; color: #8a917f; }
+      /* State classes set by the library on the list root */
+      .is-wf-xano-loading { opacity: 0.5; }
+      .meta { color: #8a917f; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <!-- All controls + counts live OUTSIDE the list wrapper, linked by wf-xano-instance="apps" -->
+      <h1>Applicants <small>(<span wf-xano-total wf-xano-instance="apps">0</span>)</small></h1>
+      <p class="meta">Showing <span wf-xano-count-from wf-xano-instance="apps">0</span>–<span wf-xano-count-to wf-xano-instance="apps">0</span></p>
+
+      <div class="toolbar">
+        <input type="text" placeholder="Search name…" wf-xano-search="q" wf-xano-instance="apps" />
+        <!-- Checkbox GROUP: checked values combine into role=Designer,Developer -->
+        <label><input type="checkbox" wf-xano-filter="role" wf-xano-value="Designer" wf-xano-instance="apps" /> Designers</label>
+        <label><input type="checkbox" wf-xano-filter="role" wf-xano-value="Developer" wf-xano-instance="apps" /> Developers</label>
+        <label>Sort
+          <select wf-xano-sort="sort_by" wf-xano-instance="apps">
+            <option value="">Newest</option>
+            <option value="name">Name A–Z</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Mock backend: filters by q, role (comma list) and sorts by name. -->
+      <script>
+        const ROLES = ['Designer', 'Developer', 'Marketer']
+        const NAMES = ['Ana Souza','Ben Wright','Carla Diaz','Dan Cohen','Elif Aydin','Franz Beck','Gita Rao','Hana Kim','Ivan Petrov','Julia Klein','Ken Watanabe','Lina Costa','Mo Farah','Nadia Ali','Omar Haddad','Pia Novak']
+        const ALL = NAMES.map((name, i) => ({ id: i + 1, name, role: ROLES[i % 3], seen: i % 4 === 0 }))
+        window.fetch = function (url, opts) {
+          const body = JSON.parse((opts && opts.body) || '{}')
+          let items = ALL
+          if (body.q) items = items.filter((a) => a.name.toLowerCase().includes(String(body.q).toLowerCase()))
+          if (body.role) { const roles = String(body.role).split(','); items = items.filter((a) => roles.includes(a.role)) }
+          if (body.sort_by === 'name') items = [...items].sort((a, b) => a.name.localeCompare(b.name))
+          const per = body.per_page || 20, page = body.page || 1
+          const paged = items.slice((page - 1) * per, (page - 1) * per + per)
+          return new Promise((resolve) => setTimeout(() => resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve({ items: paged, itemsTotal: items.length, curPage: page, pageTotal: Math.max(1, Math.ceil(items.length / per)) }),
+          }), 250)) // slight delay so the is-wf-xano-loading dim is visible
+        }
+        window.WfXanoConfig = { xanoBase: 'https://demo.xano.io', debug: true }
+      </script>
+
+      <div wf-xano-list wf-xano-instance="apps" wf-xano-source="opp30:brand/applications/list" wf-xano-auth="none" wf-xano-per-page="8">
+        <div wf-xano-template class="applicant-card">
+          <div>
+            <h3 wf-xano-bind="name"></h3>
+            <div class="role" wf-xano-bind="role"></div>
+          </div>
+          <div>
+            <span class="pill pill-new" wf-xano-if="seen !== 'true'" wf-xano-display="inline-block">New</span>
+            <span class="pill pill-seen" wf-xano-if="seen === 'true'" wf-xano-display="inline-block">Seen</span>
+          </div>
+        </div>
+        <div class="state" wf-xano-empty style="display:none">No applicants match.</div>
+        <div class="state" wf-xano-loader>Loading…</div>
+      </div>
+    </div>
+
+    <script src="../wf-xano.js"></script>
+  </body>
+</html>

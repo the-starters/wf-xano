@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wf-xano · examples</title>
+    <style>
+      body { font: 15px/1.6 -apple-system, system-ui, sans-serif; margin: 0; background: #f5f5f3; color: #23281f; }
+      .wrap { max-width: 720px; margin: 48px auto; padding: 0 20px; }
+      h1 { font-size: 24px; margin-bottom: 4px; }
+      .sub { color: #66705e; margin-top: 0; }
+      a.card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+      a.card:hover { border-color: #434b43; }
+      a.card h2 { margin: 0 0 4px; font-size: 16px; }
+      a.card p { margin: 0; color: #66705e; font-size: 14px; }
+      code { background: #ecece8; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      .note { font-size: 13px; color: #8a917f; margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>wf-xano examples</h1>
+      <p class="sub">Self-contained demos with a mocked Xano backend — view source on any page to see the exact markup.</p>
+
+      <a class="card" href="brand-opportunities.html">
+        <h2>Brand opportunities feed</h2>
+        <p>The full grammar on one page: template binds with <code>wf-xano-format</code>, status pills via
+        <code>wf-xano-if</code>, root-anchor links, a select filter, numbered pagination, outside-root counts
+        via <code>wf-xano-instance</code>, and URL sync (<code>wf-xano-url-sync</code> — paginate, filter, then reload).</p>
+      </a>
+
+      <a class="card" href="filters-and-search.html">
+        <h2>Filters, search &amp; sort</h2>
+        <p>Debounced search (<code>wf-xano-search</code>), a checkbox group combining values via
+        <code>wf-xano-value</code>, a renamed sort param, and the <code>is-wf-xano-loading</code> state class
+        dimming the list during requests — with every control living outside the list wrapper.</p>
+      </a>
+
+      <p class="note">Docs: <a href="https://github.com/the-starters/wf-xano">README</a> ·
+        <a href="https://github.com/the-starters/wf-xano/blob/main/docs/attributes.md">Attribute reference</a> ·
+        <a href="https://github.com/the-starters/wf-xano/blob/main/docs/api.md">API reference</a></p>
+    </div>
+  </body>
+</html>
