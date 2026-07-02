@@ -37,6 +37,7 @@ Set `window.WfXanoConfig` **before** the library loads:
     xanoBase: 'https://YOUR-ID.xano.io', // Xano host used by group:path sources
     authBase: '…',        // optional: API group URL for the trade-token endpoint
     tradeTokenPath: '…',  // optional: trade-token path (default /auth/trade-token/v3)
+    preAuth: true,        // pre-warm the trade-token handshake at script parse (default true)
     debug: true,          // console logging (default true)
   }
 </script>
@@ -95,6 +96,17 @@ With `wf-xano-auth="memberstack"` (the default), the library:
 
 The token is cached for the session and **automatically discarded when the logged-in Memberstack
 member changes**, so a switched account can never inherit the previous member's data.
+
+The handshake is optimized for cold boot (since v0.5.0):
+
+- The member id used as the token's cache key is read synchronously from Memberstack's own
+  localStorage cache (`_ms-mid` / `_ms-mem`); the `getCurrentMember()` network call is only a
+  fallback and runs **in parallel** with the token trade rather than before it. The id is purely
+  a cache key — the traded token always derives from the live session cookie, so it can never
+  belong to a different member than the current session.
+- The trade starts at script-parse time (`preAuth`, default on) instead of at the first list
+  request, so its round-trip overlaps DOM-ready work. Set `WfXanoConfig.preAuth = false` on pages
+  where every list is `wf-xano-auth="none"`.
 
 Requires the [memberstack-x](https://www.memberstack.com/) script to be loaded first, and a Xano
 endpoint that exchanges a Memberstack JWT for a Xano auth token.

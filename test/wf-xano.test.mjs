@@ -163,6 +163,134 @@ const FULL_PAGE1 = {
   console.log('PASS D: memberstack auth header, token caching + member-change reset')
 }
 
+// ---------- Test D2: localStorage member-id fast path (no getCurrentMember network call) ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+  let memberId = 'mem_LS_A'
+  w.localStorage.setItem('_ms-mid', '"mem_LS_A"') // Memberstack stores the id JSON-quoted
+  let getCurrentMemberCalls = 0
+  let tradeCalls = 0
+  const authHeaders = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', debug: false }
+  w.$memberstackDom = {
+    getCurrentMember: () => { getCurrentMemberCalls++; return Promise.resolve({ data: { id: memberId } }) },
+    getMemberCookie: () => Promise.resolve('ms-jwt-' + memberId),
+  }
+  w.fetch = (url, opts) => {
+    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token-' + memberId) }
+    authHeaders.push(opts.headers.Authorization)
+    return makeRes(PAGE([], 0))
+  }
+  w.eval(LIB)
+  await waitFor(() => authHeaders.length === 1)
+  assert.equal(getCurrentMemberCalls, 0, 'localStorage id short-circuits the getCurrentMember network call')
+  assert.equal(authHeaders[0], 'Bearer xano-token-mem_LS_A', 'traded token used as Bearer')
+  const inst = w.document.querySelector('[wf-xano-list]').__wfXano
+  await inst.refresh()
+  assert.equal(tradeCalls, 1, 'token cached across refresh for same member')
+  // An account switch lands in Memberstack's localStorage cache -> token dropped.
+  memberId = 'mem_LS_B'
+  w.localStorage.setItem('_ms-mid', 'mem_LS_B') // unquoted variant must parse too
+  await inst.refresh()
+  await waitFor(() => tradeCalls === 2)
+  assert.equal(authHeaders[authHeaders.length - 1], 'Bearer xano-token-mem_LS_B', 'member switch re-trades')
+  assert.equal(getCurrentMemberCalls, 0, 'switch detected without any getCurrentMember call')
+  console.log('PASS D2: localStorage member-id fast path + switch reset')
+}
+
+// ---------- Test D3: getCurrentMember fallback runs in PARALLEL — never gates first render ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+  // Empty localStorage and a getCurrentMember that NEVER resolves: the old
+  // serial chain would hang before trading; the parallel one must render.
+  w.WfXanoConfig = { authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = {
+    getCurrentMember: () => new Promise(() => {}),
+    getMemberCookie: () => Promise.resolve('ms-jwt'),
+  }
+  w.fetch = (url) => {
+    if (/\/trade\?/.test(url)) return makeRes('xano-token')
+    return makeRes(PAGE([{ id: 1, title: 'Fast' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(
+    await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1),
+    'first authed render not gated behind getCurrentMember',
+  )
+  console.log('PASS D3: member-id fallback concurrent with trade (no serial gate)')
+}
+
+// ---------- Test D4: preAuth pre-warms the trade at parse time (and preAuth:false does not) ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  // List stays auth="none": the ONLY possible trade is the parse-time pre-warm.
+  let tradeCalls = 0
+  const listCalls = []
+  w.WfXanoConfig = { authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', debug: false }
+  w.$memberstackDom = {
+    getCurrentMember: () => Promise.resolve({ data: { id: 'mem_A' } }),
+    getMemberCookie: () => Promise.resolve('ms-jwt'),
+  }
+  w.fetch = (url, opts) => {
+    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token') }
+    listCalls.push(opts)
+    return makeRes(PAGE([], 0))
+  }
+  w.eval(LIB)
+  await waitFor(() => tradeCalls === 1 && listCalls.length === 1)
+  assert.equal(tradeCalls, 1, 'trade pre-warmed at parse time even without an authed list')
+  assert.equal(listCalls[0].headers.Authorization, undefined, 'auth="none" list stays tokenless')
+
+  const dom2 = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w2 = dom2.window
+  let tradeCalls2 = 0
+  w2.WfXanoConfig = { authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w2.$memberstackDom = {
+    getCurrentMember: () => Promise.resolve({ data: { id: 'mem_A' } }),
+    getMemberCookie: () => Promise.resolve('ms-jwt'),
+  }
+  w2.fetch = (url) => { if (/\/trade\?/.test(url)) tradeCalls2++; return makeRes(PAGE([], 0)) }
+  w2.eval(LIB)
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(tradeCalls2, 0, 'preAuth:false skips the pre-warm')
+  console.log('PASS D4: parse-time token pre-warm (+ preAuth opt-out)')
+}
+
+// ---------- Test D5: failed handshake is not cached — retried after login ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+  let cookie = null // logged out at first
+  let tradeCalls = 0
+  const authHeaders = []
+  w.WfXanoConfig = { authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = {
+    getCurrentMember: () => Promise.resolve({ data: { id: cookie ? 'mem_A' : null } }),
+    getMemberCookie: () => Promise.resolve(cookie),
+  }
+  w.fetch = (url, opts) => {
+    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token') }
+    authHeaders.push(opts.headers.Authorization)
+    return makeRes(PAGE([], 0))
+  }
+  w.eval(LIB)
+  const listEl = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => listEl.classList.contains('is-wf-xano-error')), 'logged-out load surfaces the auth error')
+  assert.equal(tradeCalls, 0, 'no trade request without a session cookie')
+  cookie = 'ms-jwt-mem_A' // user logs in
+  await listEl.__wfXano.refresh()
+  await waitFor(() => authHeaders.length === 1)
+  assert.equal(authHeaders[0], 'Bearer xano-token', 'post-login refresh trades a fresh token (failure not cached)')
+  assert.ok(!listEl.classList.contains('is-wf-xano-error'), 'error state cleared after successful retry')
+  console.log('PASS D5: failed handshake not cached — retried after login')
+}
+
 // ---------- Test 1: pre-load callback queue (GA/Finsweet pattern) ----------
 {
   const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })

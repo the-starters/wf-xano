@@ -21,6 +21,10 @@
  *   - Member-change token reset — dropping the cached Xano token when the
  *     Memberstack member changes, so a switched account can't inherit the
  *     previous member's data.
+ *   - Parallel cold-boot auth — the member id comes from Memberstack's
+ *     localStorage cache (network fallback runs concurrently with the
+ *     token trade), and the trade pre-warms at script parse, so first
+ *     render is not gated behind a serial auth chain.
  *   - Root-element attribute handling — the card root is often the <a> (or
  *     carries binds) itself, so every per-card scan includes the root, not
  *     just descendants.
@@ -66,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.4.0'
+  var VERSION = '0.5.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -201,40 +205,118 @@
 
   /* ============================ AUTH BRIDGE =========================== */
   // Memberstack JWT -> Xano auth token, cached and reset on member change.
-  var _token = null
-  var _tokenMemberId = null
+  //
+  // This handshake is the cold-boot critical path, so nothing here waits
+  // that doesn't have to (measured 2026-07: a serial getCurrentMember ->
+  // trade-token -> list chain cost ~1.2s before first render):
+  //   - The member id is read synchronously from Memberstack's own
+  //     localStorage cache (_ms-mid / _ms-mem); ms.getCurrentMember() — a
+  //     ~500ms network round-trip — is only the fallback, and it runs
+  //     CONCURRENTLY with the cookie -> token trade instead of gating it.
+  //     The member id is only a CACHE KEY: the traded token always derives
+  //     from the live session cookie, so trading before the id resolves
+  //     can never mint a token for the wrong member.
+  //   - The trade is pre-warmed at script-parse time (see below), so the
+  //     round-trip overlaps DOM-ready instead of the first list request.
+  //   - Account-switch semantics are unchanged: a cached token is dropped
+  //     whenever the member id no longer matches the one it was traded
+  //     under (docs/api.md, Authentication), so a switched account can
+  //     never inherit the previous member's data.
+  var _auth = null // { memberId: Promise<string|null>, token: Promise<string> }
 
-  async function currentMemberId() {
+  /** Synchronous member id from Memberstack's localStorage cache, or null. */
+  function cachedMemberId() {
+    try {
+      var mid = window.localStorage.getItem('_ms-mid')
+      if (mid) return mid.replace(/^"+|"+$/g, '')
+      var mem = window.localStorage.getItem('_ms-mem')
+      if (mem) {
+        var parsed = JSON.parse(mem)
+        if (parsed && parsed.id) return parsed.id
+      }
+    } catch (e) {
+      /* storage blocked/absent — fall through to the network */
+    }
+    return null
+  }
+
+  /** Member id: localStorage fast path, else the getCurrentMember() network
+   *  call. Never rejects — an unknown member resolves null. */
+  function currentMemberId() {
+    var cached = cachedMemberId()
+    if (cached != null) return Promise.resolve(cached)
     try {
       var ms = window.$memberstackDom
-      if (!ms) return null
-      var r = await ms.getCurrentMember()
-      return r && r.data ? r.data.id : null
+      if (!ms) return Promise.resolve(null)
+      return Promise.resolve(ms.getCurrentMember()).then(
+        function (r) {
+          return r && r.data ? r.data.id : null
+        },
+        function () {
+          return null
+        },
+      )
     } catch (e) {
-      return null
+      return Promise.resolve(null)
     }
   }
 
-  async function xanoToken() {
-    var mid = await currentMemberId()
-    if (mid !== _tokenMemberId) {
-      // Account switch (or first call): drop any stale token.
-      _token = null
-      _tokenMemberId = mid
-    }
-    if (_token) return _token
+  /** Memberstack cookie -> Xano token, one round-trip, no caching here. */
+  function tradeToken() {
     var ms = window.$memberstackDom
-    if (!ms) throw new Error('Memberstack not available')
-    var msToken = await ms.getMemberCookie()
-    if (!msToken) throw new Error('No Memberstack session (member not logged in)')
-    var res = await fetch(AUTH_BASE + TRADE_PATH + '?token=' + encodeURIComponent(msToken))
-    var data = await res.json().catch(function () {
-      return null
+    if (!ms) return Promise.reject(new Error('Memberstack not available'))
+    return Promise.resolve(ms.getMemberCookie()).then(function (msToken) {
+      if (!msToken) throw new Error('No Memberstack session (member not logged in)')
+      return fetch(AUTH_BASE + TRADE_PATH + '?token=' + encodeURIComponent(msToken)).then(function (res) {
+        return res
+          .json()
+          .catch(function () {
+            return null
+          })
+          .then(function (data) {
+            if (!res.ok) throw Object.assign(new Error('trade-token failed'), { status: res.status, data: data })
+            var token = typeof data === 'string' ? data : data && (data.authToken || data.token)
+            if (!token) throw new Error('trade-token returned no token')
+            return token
+          })
+      })
     })
-    if (!res.ok) throw Object.assign(new Error('trade-token failed'), { status: res.status, data: data })
-    _token = typeof data === 'string' ? data : data && (data.authToken || data.token)
-    if (!_token) throw new Error('trade-token returned no token')
-    return _token
+  }
+
+  /** Kick off member-id resolution and the token trade IN PARALLEL. */
+  function startAuth() {
+    var auth = { memberId: currentMemberId(), token: null }
+    auth.token = tradeToken().catch(function (err) {
+      // A failed trade (logged out, endpoint down) must not poison the
+      // cache — the next authed load retries a fresh handshake.
+      if (_auth === auth) _auth = null
+      throw err
+    })
+    return auth
+  }
+
+  async function xanoToken() {
+    if (_auth) {
+      // Cached (or in-flight) token: reconcile the member id — instant on
+      // the localStorage path — and drop the token on an account switch.
+      var owner = await _auth.memberId
+      var mid = await currentMemberId()
+      if (mid !== owner) _auth = null
+    }
+    if (!_auth) _auth = startAuth()
+    return _auth.token
+  }
+
+  // Pre-warm the handshake at script-parse time — well before the DOM-ready
+  // boot fires the first list request — so the trade round-trip overlaps
+  // page work it used to serialize behind. Requires memberstack-x to have
+  // loaded first (the documented script order); disable with
+  // WfXanoConfig.preAuth = false on pages where every list is auth="none".
+  if (CFG.preAuth !== false && window.$memberstackDom) {
+    _auth = startAuth()
+    _auth.token.catch(function () {
+      /* logged out / trade failure — surfaced by the first authed load */
+    })
   }
 
   /* ============================ RESPONSE SHAPE ======================== */
