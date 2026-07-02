@@ -11,17 +11,20 @@ define *what a node is*, **Settings** tune *how it behaves*.
 
 ## Elements
 
-Add these to mark what each element is.
+Structural roles use one key=value attribute: **`wf-xano-element="<name>"`** (like Finsweet's
+`fs-list-element`). Key=value is the canonical form because Webflow's Designer strips custom
+attributes that have no value. The legacy valueless markers (`wf-xano-list`, `wf-xano-template`, …)
+remain supported as aliases.
 
 ### List
 
 | Attribute | Required | Applies to | Description |
 | --- | --- | --- | --- |
-| `wf-xano-list` | ✅ | the list wrapper | Marks a list root. Everything else lives inside it (or is linked by an [instance key](#scoping--instance-keys)). |
-| `wf-xano-template` | ✅ | the card | The item template. Cloned once per item; the original stays hidden. Rendered clones get `wf-xano-item` and `data-wf-xano-id="<item.id>"`. |
-| `wf-xano-empty` | — | any element | Shown when the response has 0 items. |
-| `wf-xano-loader` | — | any element | Shown while a request is in flight. |
-| `wf-xano-error` | — | any element | Shown when a request fails. |
+| `wf-xano-element="list"` | ✅ | the list wrapper | Marks a list root. Everything else lives inside it (or is linked by an [instance key](#scoping--instance-keys)). |
+| `wf-xano-element="template"` | ✅ | the card | The item template. Cloned once per item; the original stays hidden. Rendered clones get `wf-xano-item` and `data-wf-xano-id="<item.id>"`. |
+| `wf-xano-element="empty"` | — | any element | Shown when the response has 0 items. |
+| `wf-xano-element="loader"` | — | any element | Shown while a request is in flight. |
+| `wf-xano-element="error"` | — | any element | Shown when a request fails. |
 
 ### Card bindings
 
@@ -38,15 +41,15 @@ These work on any descendant of the template **and on the template root itself**
 
 | Attribute | Description |
 | --- | --- |
-| `wf-xano-total` | Total item count from the server. |
-| `wf-xano-count-from` / `wf-xano-count-to` | Visible range — "Showing **9**–**12** of 45". |
+| `wf-xano-element="total"` | Total item count from the server. |
+| `wf-xano-element="count-from"` / `="count-to"` | Visible range — "Showing **9**–**12** of 45". |
 
 ### Pagination
 
 | Attribute | Description |
 | --- | --- |
-| `wf-xano-page-prev` / `wf-xano-page-next` | Prev/next controls. Get `is-disabled` at the range edges. |
-| `wf-xano-page-number` | Template button, cloned per visible page. Clones get `wf-xano-page-num`; the current page gets `is-active` and `aria-current="page"`. |
+| `wf-xano-element="page-prev"` / `="page-next"` | Prev/next controls. Get `is-disabled` at the range edges. |
+| `wf-xano-element="page-number"` | Template button, cloned per visible page. Clones get `wf-xano-page-num`; the current page gets `is-active` and `aria-current="page"`. |
 
 ### Filters, search, sort
 
@@ -60,7 +63,7 @@ These work on any descendant of the template **and on the template root itself**
 
 Add these to the elements above to tune behavior.
 
-### On the list (`wf-xano-list`)
+### On the list (`wf-xano-element="list"`)
 
 | Attribute | Values | Default | Description |
 | --- | --- | --- | --- |
@@ -79,7 +82,7 @@ Add these to the elements above to tune behavior.
 | Attribute | Applies to | Description |
 | --- | --- | --- |
 | `wf-xano-format` | `wf-xano-bind` elements | `date` or `datetime` — formats timestamps with the user's locale. |
-| `wf-xano-display` | `wf-xano-if`, `wf-xano-empty`, `wf-xano-loader`, `wf-xano-error` elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
+| `wf-xano-display` | `wf-xano-if` elements and the `empty`/`loader`/`error` state elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
 | `wf-xano-link-prefix` / `wf-xano-link-suffix` | `wf-xano-link` elements | Wrap the field value: `prefix + value + suffix`. |
 | `wf-xano-value` | checkbox/radio filters | The real filter value — Webflow checkboxes all submit `"on"`. |
 | `wf-xano-debounce` | a `wf-xano-search` input | Per-input debounce override. |
@@ -103,9 +106,9 @@ To place counts, filters, search, sort, or pagination **outside** the list wrapp
 instance key and tag the outside element with the same key:
 
 ```html
-<span wf-xano-total wf-xano-instance="opps"></span>
+<span wf-xano-element="total" wf-xano-instance="opps"></span>
 
-<div wf-xano-list wf-xano-instance="opps" wf-xano-source="opp30:brand/opportunities/list">
+<div wf-xano-element="list" wf-xano-instance="opps" wf-xano-source="opp30:brand/opportunities/list">
   …
 </div>
 ```
