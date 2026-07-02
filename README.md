@@ -9,7 +9,7 @@ tables, dashboards, admin/back-office queues. The complement to search libraries
 **search-heavy** public browse.
 
 ```html
-<div wf-xano-element="list" wf-xano-source="opp30:brand/opportunities/list">
+<div wf-xano-element="wrapper" wf-xano-source="opp30:brand/opportunities/list">
   <a wf-xano-element="template" wf-xano-link="id" wf-xano-link-prefix="/opportunities/">
     <h3 wf-xano-bind="title"></h3>
     <p wf-xano-bind="description"></p>
@@ -21,8 +21,10 @@ tables, dashboards, admin/back-office queues. The complement to search libraries
 ```
 
 Structural roles use `wf-xano-element="<name>"` (key=value, since v0.3.0) because Webflow's
-Designer strips valueless custom attributes; the legacy `wf-xano-list`/`wf-xano-template`/…
-markers still work as aliases.
+Designer strips valueless custom attributes. Role names follow Finsweet's `fs-list-element`
+vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks the items
+container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
+`element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
 ## When to use which
 
@@ -44,7 +46,7 @@ Add to your page's custom code, **after** `memberstack-x` (only needed when usin
 <script>
   window.WfXanoConfig = { xanoBase: 'https://YOUR-ID.xano.io' }
 </script>
-<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.3/wf-xano.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.4/wf-xano.min.js"></script>
 ```
 
 Then add attributes in the Webflow Designer. That's it — the list renders on load.
@@ -93,8 +95,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.3.0/wf-xano.min.js` | pinned — deterministic, recommended for production |
-| `…/gh/the-starters/wf-xano@0.3/wf-xano.min.js` | latest patch of 0.3 |
+| `…/gh/the-starters/wf-xano@0.4.0/wf-xano.min.js` | pinned — deterministic, recommended for production |
+| `…/gh/the-starters/wf-xano@0.4/wf-xano.min.js` | latest patch of 0.4 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.
