@@ -95,6 +95,25 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.
 
+## Extending wf-xano
+
+**Design rule: don't invent new conventions — port them.** When a feature is missing, copy the
+pattern *and the attribute-naming system* from the established Webflow libraries, in this order:
+
+1. **[Finsweet Attributes](https://github.com/finsweet/attributes)** — the de-facto standard grammar
+   Webflow designers already know. Mirror their element/setting split, naming style, state classes,
+   value overrides, hooks, and API conventions. Their
+   [`list` package constants](https://github.com/finsweet/attributes/blob/master/packages/list/src/utils/constants.ts)
+   are the richest catalog of list features worth porting (load-more/infinite modes, page
+   siblings/boundary/dots, scroll anchors, filter tags, condition groups…).
+2. **[wf-algolia](https://www.npmjs.com/package/@candid-leap/wf-algolia)** — the grammar wf-xano
+   already mirrors. Keep feature parity where it makes sense, so migrating a feed between the two
+   stays a mechanical attribute rename (see the
+   [brand-view example](https://the-starters.github.io/wf-xano/examples/opportunities-brand-view.html)).
+
+Matching known conventions keeps the learning curve at zero and migrations table-driven; a third
+dialect helps no one.
+
 ## Credits
 
 The attribute-grammar approach — and several API patterns (pre-load callback queue, instance keys,
