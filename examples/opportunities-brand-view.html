@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wf-xano · brand opportunities view (real-world case)</title>
+    <style>
+      body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 0; background: #f5f5f3; color: #23281f; }
+      .wrap { max-width: 720px; margin: 40px auto; padding: 0 20px; }
+      h1 { font-size: 20px; margin-bottom: 2px; }
+      .sub { color: #66705e; margin-top: 0; font-size: 14px; }
+      .toolbar { display: flex; gap: 12px; align-items: center; margin: 18px 0; flex-wrap: wrap; }
+      select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 8px; }
+      .btn-post { margin-left: auto; background: #434b43; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; }
+      .btn-post:hover { background: #2f352f; }
+      .meta-line { color: #8a917f; font-size: 13px; }
+
+      /* Mirrors the real page's .opportunity-card design */
+      .opportunity-card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+      .opportunity-card h3 { margin: 0 0 4px; font-size: 16px; }
+      .opportunity-card p { margin: 0 0 8px; color: #66705e; }
+      .card-meta { font-size: 13px; color: #8a917f; }
+      .label_component { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
+      .is-active-label { background: #dff0d8; color: #2f6b2f; }
+      .is-closed-label { background: #eee; color: #777; }
+      .is-review-label { background: #fdf1d6; color: #8a6d1c; }
+      .just-posted { outline: 2px solid #2f6b2f33; }
+
+      .opportunities-empty_card-container, .feed-list_loading { padding: 16px; color: #8a917f; }
+      .pager { display: flex; gap: 6px; margin-top: 16px; }
+      .pager button { border: 1px solid #ccc; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+      .pager button.is-active { background: #434b43; color: #fff; border-color: #434b43; }
+      .pager button.is-disabled { opacity: 0.4; pointer-events: none; }
+      .is-wf-xano-loading .opportunities-list_collection-list { opacity: 0.5; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <!--
+        ══════════════════════════════════════════════════════════════════
+        REAL-WORLD CASE: The Starters' /opportunities-brands-view
+
+        A brand's own opportunities feed. The production page rendered this
+        via a search index — so a just-posted job was missing for seconds
+        (indexing lag + response cache), and the base filter hardcoded one
+        brand (wf-algolia-base-filter="brands_reference:1").
+
+        wf-xano renders the same card design straight from the Xano endpoint
+        `POST api:opp30/brand/opportunities/list` (auth user_v3):
+          • always fresh — a new post shows on the next request
+          • member-scoped server-side via $auth — no hardcoded brand filter
+          • the endpoint's `status` input drives the filter select
+
+        Attribute mapping from the old wf-algolia markup:
+          wf-algolia-element="browse"    → wf-xano-list + wf-xano-source
+          wf-algolia-base-filter          → (deleted — server scopes by $auth)
+          wf-algolia-element="results"    → (no attribute needed — cards render
+                                             next to the template)
+          wf-algolia-element="template"   → wf-xano-template
+          wf-algolia-text="X"             → wf-xano-bind="X"
+          wf-algolia-if / -display        → wf-xano-if / wf-xano-display
+          wf-algolia-link="id" + -prefix  → wf-xano-link="id" + -prefix
+          wf-algolia-element="no-results" → wf-xano-empty
+          wf-algolia-element="loader"     → wf-xano-loader
+          wf-algolia-url-sync="true"      → wf-xano-url-sync="true"
+          wf-algolia-pagination/page-*    → wf-xano-page-prev/-number/-next
+        ══════════════════════════════════════════════════════════════════
+      -->
+
+      <h1>My opportunities <small>(<span wf-xano-total wf-xano-instance="brand-opps">0</span>)</small></h1>
+      <p class="sub meta-line">Showing <span wf-xano-count-from wf-xano-instance="brand-opps">0</span>–<span wf-xano-count-to wf-xano-instance="brand-opps">0</span> · rendered live from <code>brand/opportunities/list</code> (mocked)</p>
+
+      <!-- Mock backend + "post a job" simulator (stands in for Xano) -->
+      <script>
+        const TITLES = ['Shopify Theme Developer', 'Email Marketing Lead', 'Brand Designer', 'UGC Content Creator', 'Klaviyo Specialist', 'Amazon PPC Manager', 'Packaging Designer', 'Growth Marketer', 'Landing Page Designer', 'TikTok Ads Buyer', 'CRO Specialist', 'Copywriter']
+        const PT = ['One Time', 'Ongoing Part Time', 'Full Time']
+        const FREQ = { 'One Time': 'project', 'Ongoing Part Time': 'month', 'Full Time': 'year' }
+        const DUR = ['≤ 1 months', '1–3 months', '3–6 months', '6+ months']
+        const STATUS = ['Active', 'Active', 'Active', 'Pending Review', 'Closed']
+        let NEXT_ID = 400
+        const DB = TITLES.map((title, i) => {
+          const project_type = PT[i % 3]
+          return {
+            id: 340 + i,
+            title,
+            description: 'Scope, deliverables and collaboration details for this engagement with our e-commerce brand.',
+            project_type,
+            est_project_duration: DUR[i % 4],
+            budget: ['1500', '4500', '95000'][i % 3],
+            budget_frequency: FREQ[project_type],
+            status: STATUS[i % 5],
+            published_at: Date.now() - (i + 1) * 86400000,
+          }
+        })
+        window.fetch = function (url, opts) {
+          const body = JSON.parse((opts && opts.body) || '{}')
+          let items = [...DB].sort((a, b) => b.published_at - a.published_at)
+          if (body.status) items = items.filter((o) => o.status === body.status)
+          const per = body.per_page || 20, page = body.page || 1
+          return new Promise((resolve) => setTimeout(() => resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve({
+              items: items.slice((page - 1) * per, (page - 1) * per + per),
+              itemsTotal: items.length, curPage: page,
+              pageTotal: Math.max(1, Math.ceil(items.length / per)),
+            }),
+          }), 200))
+        }
+        window.WfXanoConfig = { xanoBase: 'https://demo.xano.io', debug: true }
+
+        // THE ORIGINAL BUG, FIXED: post a job → it's on the feed immediately.
+        // (In production this is the redirect back from /opportunities---create;
+        // Xano is authoritative, so the very next request includes the new row.)
+        function postJob() {
+          DB.unshift({
+            id: NEXT_ID++,
+            title: 'Just posted · Senior CRO Analyst',
+            description: 'This opportunity was created a moment ago — and is already visible, because the feed reads Xano directly.',
+            project_type: 'Ongoing Part Time',
+            est_project_duration: '1–3 months',
+            budget: '5200',
+            budget_frequency: 'month',
+            status: 'Active',
+            published_at: Date.now(),
+          })
+          window.WfXano.get('brand-opps').goToPage(1).then(() => {
+            const card = document.querySelector('[wf-xano-item]')
+            if (card) card.classList.add('just-posted')
+          })
+        }
+      </script>
+
+      <div
+        wf-xano-list
+        wf-xano-instance="brand-opps"
+        wf-xano-source="opp30:brand/opportunities/list"
+        wf-xano-auth="none"
+        wf-xano-per-page="6"
+        wf-xano-page-window="5"
+        wf-xano-url-sync="true"
+        class="section_opportunities-list"
+      >
+        <!-- In production remove wf-xano-auth="none": the default memberstack
+             mode sends the member's Xano token, and the endpoint scopes rows
+             to that brand via $auth. -->
+
+        <div class="toolbar">
+          <label>Status
+            <!-- Drives the endpoint's `status` text input -->
+            <select wf-xano-filter="status">
+              <option value="">All</option>
+              <option value="Active">Active</option>
+              <option value="Pending Review">Pending Review</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </label>
+          <button class="btn-post" type="button" onclick="postJob()">＋ Post opportunity (simulate)</button>
+        </div>
+
+        <div class="opportunities-list_collection-list">
+          <!-- Same card structure/fields as the production .opportunity-card -->
+          <a
+            wf-xano-template
+            class="opportunity-card"
+            wf-xano-link="id"
+            wf-xano-link-prefix="/opportunities-details---brand-view?opp="
+          >
+            <h3 wf-xano-bind="title"></h3>
+            <p wf-xano-bind="description"></p>
+            <div class="card-meta">
+              <span wf-xano-bind="project_type"></span> ·
+              <span wf-xano-bind="est_project_duration"></span> ·
+              $<span wf-xano-bind="budget"></span>/<span wf-xano-bind="budget_frequency"></span> ·
+              <time wf-xano-bind="published_at" wf-xano-format="date"></time>
+              <!-- Status pills — identical expressions to the production wf-algolia-if markup -->
+              <span class="label_component is-active-label" wf-xano-if="status === 'Active'" wf-xano-display="inline-block">Active</span>
+              <span class="label_component is-closed-label" wf-xano-if="status === 'Closed'" wf-xano-display="inline-block">Closed</span>
+              <span class="label_component is-review-label" wf-xano-if="status === 'Pending Review'" wf-xano-display="inline-block">Pending Review</span>
+            </div>
+          </a>
+        </div>
+
+        <div class="opportunities-empty_card-container" wf-xano-empty style="display:none">
+          You haven't posted any opportunities yet.
+        </div>
+        <div class="feed-list_loading" wf-xano-loader>Loading your opportunities…</div>
+
+        <div class="pager">
+          <button wf-xano-page-prev type="button">‹ Prev</button>
+          <button wf-xano-page-number type="button">1</button>
+          <button wf-xano-page-next type="button">Next ›</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="../wf-xano.js"></script>
+  </body>
+</html>
