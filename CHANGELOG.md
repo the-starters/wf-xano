@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.0 — 2026-07-02
+
+### Changed
+
+- **Canonical key=value role markers** — structural roles are now declared with
+  `wf-xano-element="<name>"` (`list`, `template`, `empty`, `loader`, `error`, `page-prev`,
+  `page-number`, `page-next`, `total`, `count-from`, `count-to`), matching Finsweet's
+  `fs-list-element` / wf-algolia's `wf-algolia-element` grammar. Motivation: Webflow's Designer
+  strips custom attributes that have no value, which silently broke valueless markers.
+  **Legacy valueless markers remain supported as aliases** — no breaking change.
+
+### Fixed
+
+- **Instance-scoped comma selectors** — with an instance key, scoping is now applied to every
+  branch of a comma-separated selector (previously only the last branch was scoped, so e.g.
+  URL-sync control hydration could match another instance's controls outside the root).
+
 ## v0.2.1 — 2026-07-02
 
 ### Added

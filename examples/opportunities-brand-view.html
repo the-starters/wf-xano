@@ -52,23 +52,23 @@
           • the endpoint's `status` input drives the filter select
 
         Attribute mapping from the old wf-algolia markup:
-          wf-algolia-element="browse"    → wf-xano-list + wf-xano-source
+          wf-algolia-element="browse"    → wf-xano-element="list" + wf-xano-source
           wf-algolia-base-filter          → (deleted — server scopes by $auth)
           wf-algolia-element="results"    → (no attribute needed — cards render
                                              next to the template)
-          wf-algolia-element="template"   → wf-xano-template
+          wf-algolia-element="template"   → wf-xano-element="template"
           wf-algolia-text="X"             → wf-xano-bind="X"
           wf-algolia-if / -display        → wf-xano-if / wf-xano-display
           wf-algolia-link="id" + -prefix  → wf-xano-link="id" + -prefix
-          wf-algolia-element="no-results" → wf-xano-empty
-          wf-algolia-element="loader"     → wf-xano-loader
+          wf-algolia-element="no-results" → wf-xano-element="empty"
+          wf-algolia-element="loader"     → wf-xano-element="loader"
           wf-algolia-url-sync="true"      → wf-xano-url-sync="true"
-          wf-algolia-pagination/page-*    → wf-xano-page-prev/-number/-next
+          wf-algolia-pagination/page-*    → wf-xano-element="page-prev"/-number/-next
         ══════════════════════════════════════════════════════════════════
       -->
 
-      <h1>My opportunities <small>(<span wf-xano-total wf-xano-instance="brand-opps">0</span>)</small></h1>
-      <p class="sub meta-line">Showing <span wf-xano-count-from wf-xano-instance="brand-opps">0</span>–<span wf-xano-count-to wf-xano-instance="brand-opps">0</span> · rendered live from <code>brand/opportunities/list</code> (mocked)</p>
+      <h1>My opportunities <small>(<span wf-xano-element="total" wf-xano-instance="brand-opps">0</span>)</small></h1>
+      <p class="sub meta-line">Showing <span wf-xano-element="count-from" wf-xano-instance="brand-opps">0</span>–<span wf-xano-element="count-to" wf-xano-instance="brand-opps">0</span> · rendered live from <code>brand/opportunities/list</code> (mocked)</p>
 
       <!-- Mock backend + "post a job" simulator (stands in for Xano) -->
       <script>
@@ -131,7 +131,7 @@
       </script>
 
       <div
-        wf-xano-list
+        wf-xano-element="list"
         wf-xano-instance="brand-opps"
         wf-xano-source="opp30:brand/opportunities/list"
         wf-xano-auth="none"
@@ -160,7 +160,7 @@
         <div class="opportunities-list_collection-list">
           <!-- Same card structure/fields as the production .opportunity-card -->
           <a
-            wf-xano-template
+            wf-xano-element="template"
             class="opportunity-card"
             wf-xano-link="id"
             wf-xano-link-prefix="/opportunities-details---brand-view?opp="
@@ -180,15 +180,15 @@
           </a>
         </div>
 
-        <div class="opportunities-empty_card-container" wf-xano-empty style="display:none">
+        <div class="opportunities-empty_card-container" wf-xano-element="empty" style="display:none">
           You haven't posted any opportunities yet.
         </div>
-        <div class="feed-list_loading" wf-xano-loader>Loading your opportunities…</div>
+        <div class="feed-list_loading" wf-xano-element="loader">Loading your opportunities…</div>
 
         <div class="pager">
-          <button wf-xano-page-prev type="button">‹ Prev</button>
-          <button wf-xano-page-number type="button">1</button>
-          <button wf-xano-page-next type="button">Next ›</button>
+          <button wf-xano-element="page-prev" type="button">‹ Prev</button>
+          <button wf-xano-element="page-number" type="button">1</button>
+          <button wf-xano-element="page-next" type="button">Next ›</button>
         </div>
       </div>
     </div>

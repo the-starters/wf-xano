@@ -26,8 +26,8 @@
   <body>
     <div class="wrap">
       <!-- All controls + counts live OUTSIDE the list wrapper, linked by wf-xano-instance="apps" -->
-      <h1>Applicants <small>(<span wf-xano-total wf-xano-instance="apps">0</span>)</small></h1>
-      <p class="meta">Showing <span wf-xano-count-from wf-xano-instance="apps">0</span>–<span wf-xano-count-to wf-xano-instance="apps">0</span></p>
+      <h1>Applicants <small>(<span wf-xano-element="total" wf-xano-instance="apps">0</span>)</small></h1>
+      <p class="meta">Showing <span wf-xano-element="count-from" wf-xano-instance="apps">0</span>–<span wf-xano-element="count-to" wf-xano-instance="apps">0</span></p>
 
       <div class="toolbar">
         <input type="text" placeholder="Search name…" wf-xano-search="q" wf-xano-instance="apps" />
@@ -63,8 +63,8 @@
         window.WfXanoConfig = { xanoBase: 'https://demo.xano.io', debug: true }
       </script>
 
-      <div wf-xano-list wf-xano-instance="apps" wf-xano-source="opp30:brand/applications/list" wf-xano-auth="none" wf-xano-per-page="8">
-        <div wf-xano-template class="applicant-card">
+      <div wf-xano-element="list" wf-xano-instance="apps" wf-xano-source="opp30:brand/applications/list" wf-xano-auth="none" wf-xano-per-page="8">
+        <div wf-xano-element="template" class="applicant-card">
           <div>
             <h3 wf-xano-bind="name"></h3>
             <div class="role" wf-xano-bind="role"></div>
@@ -74,8 +74,8 @@
             <span class="pill pill-seen" wf-xano-if="seen === 'true'" wf-xano-display="inline-block">Seen</span>
           </div>
         </div>
-        <div class="state" wf-xano-empty style="display:none">No applicants match.</div>
-        <div class="state" wf-xano-loader>Loading…</div>
+        <div class="state" wf-xano-element="empty" style="display:none">No applicants match.</div>
+        <div class="state" wf-xano-element="loader">Loading…</div>
       </div>
     </div>
 

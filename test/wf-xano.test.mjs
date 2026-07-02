@@ -381,4 +381,52 @@ const FULL_PAGE1 = {
   console.log('PASS 10: wf-xano-display on loader/empty (wf-algolia parity)')
 }
 
+// ---------- Test 11: canonical wf-xano-element="…" grammar (v0.3.0) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="list" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10">
+      <a wf-xano-element="template" wf-xano-link="id" wf-xano-link-prefix="/d?id="><h3 wf-xano-bind="title"></h3></a>
+      <div wf-xano-element="empty" wf-xano-display="flex" style="display:none">none</div>
+      <div wf-xano-element="loader">loading</div>
+      <div class="pager"><button wf-xano-element="page-prev">prev</button><button wf-xano-element="page-number">1</button><button wf-xano-element="page-next">next</button></div>
+      <span wf-xano-element="total"></span>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 7, title: 'Canon' }], 15, 1, 2))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'canonical list rendered')
+  const card = w.document.querySelector('[wf-xano-item]')
+  assert.equal(card.querySelector('h3').textContent, 'Canon')
+  assert.equal(card.getAttribute('href'), '/d?id=7')
+  assert.equal(card.getAttribute('wf-xano-element'), null, 'clone drops wf-xano-element="template" role')
+  assert.equal(w.document.querySelector('[wf-xano-element="template"]').style.display, 'none', 'template stays hidden')
+  assert.equal(w.document.querySelector('[wf-xano-element="total"]').textContent, '15')
+  assert.equal(w.document.querySelector('[wf-xano-element="loader"]').style.display, 'none', 'loader hidden after load')
+  assert.ok(w.document.querySelector('[wf-xano-element="page-prev"]').classList.contains('is-disabled'), 'prev disabled on page 1')
+  assert.equal(w.document.querySelectorAll('[wf-xano-page-num]').length, 2, 'page buttons cloned from canonical template')
+  console.log('PASS 11: canonical wf-xano-element grammar')
+}
+
+// ---------- Test 12: instance-scoped comma selectors (counts/pagination OUTSIDE root, canonical) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <span wf-xano-element="total" wf-xano-instance="opps"></span>
+    <button wf-xano-element="page-next" wf-xano-instance="opps">next</button>
+    <div wf-xano-element="list" wf-xano-instance="opps" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  w.fetch = (url, opts) => { bodies.push(JSON.parse(opts.body)); return makeRes(PAGE([{ id: 1, title: 'T' }], 12, 1, 2)) }
+  w.eval(LIB)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1)
+  assert.equal(w.document.querySelector('[wf-xano-element="total"]').textContent, '12', 'outside-root canonical total bound (comma selector scoped per branch)')
+  w.document.querySelector('[wf-xano-element="page-next"]').click()
+  await waitFor(() => bodies.length === 2)
+  assert.equal(bodies[1].page, 2, 'outside-root canonical page-next drives paging')
+  console.log('PASS 12: instance-scoped comma selectors (canonical, outside root)')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

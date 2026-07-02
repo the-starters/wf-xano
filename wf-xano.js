@@ -37,16 +37,21 @@
  *     wfx.instances[0].on('results', console.log)
  *   })
  *
- * Minimal markup:
- *   <div wf-xano-list wf-xano-source="opp30:brand/opportunities/list">
- *     <div wf-xano-template>
+ * Minimal markup (canonical since v0.3.0 — role markers are key=value,
+ * `wf-xano-element="<name>"`, because Webflow's Designer strips custom
+ * attributes that have no value; this also matches the Finsweet
+ * `fs-list-element` / wf-algolia `wf-algolia-element` grammar):
+ *   <div wf-xano-element="list" wf-xano-source="opp30:brand/opportunities/list">
+ *     <div wf-xano-element="template">
  *       <h3 wf-xano-bind="title"></h3>
  *       <span wf-xano-if="status === 'Active'">Live</span>
  *       <a wf-xano-link="id" wf-xano-link-prefix="/detail?id=">View</a>
  *     </div>
- *     <div wf-xano-empty>No results yet.</div>
- *     <div wf-xano-loader></div>
+ *     <div wf-xano-element="empty">No results yet.</div>
+ *     <div wf-xano-element="loader"></div>
  *   </div>
+ * Legacy valueless markers (wf-xano-list, wf-xano-template, …) remain
+ * supported as aliases.
  * ------------------------------------------------------------------
  */
 ;(function () {
@@ -57,7 +62,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.2.1'
+  var VERSION = '0.3.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -69,11 +74,11 @@
     if (DEBUG) console.info.apply(console, ['[wf-xano]'].concat([].slice.call(arguments)))
   }
 
-  // FOUC guard: hide raw templates before boot. Clones drop the attribute,
-  // so `!important` never affects rendered items.
+  // FOUC guard: hide raw templates before boot. Clones drop the marker
+  // attributes, so `!important` never affects rendered items.
   try {
     var foucStyle = document.createElement('style')
-    foucStyle.textContent = '[wf-xano-template]{display:none!important}'
+    foucStyle.textContent = '[wf-xano-element="template"],[wf-xano-template]{display:none!important}'
     ;(document.head || document.documentElement).appendChild(foucStyle)
   } catch (e) {
     /* non-fatal */
@@ -93,6 +98,19 @@
     var list = qa(card, sel)
     if (card.matches && card.matches(sel)) list.unshift(card)
     return list
+  }
+
+  /** Selector for a structural role in BOTH grammars: the canonical
+   *  key=value form `wf-xano-element="<name>"` (Webflow's Designer strips
+   *  valueless custom attributes) and the legacy `wf-xano-<name>` marker. */
+  function elSel(name) {
+    return '[wf-xano-element="' + name + '"], [wf-xano-' + name + ']'
+  }
+
+  /** Remove a structural role marker (both grammars) from a cloned node. */
+  function clearRole(el, name) {
+    el.removeAttribute('wf-xano-' + name)
+    if (el.getAttribute('wf-xano-element') === name) el.removeAttribute('wf-xano-element')
   }
 
   /* ============================ VALUE HELPERS ========================== */
@@ -315,10 +333,10 @@
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.page = 1
     this.params = this.readStaticParams()
-    this.template = q(root, '[wf-xano-template]')
-    this.emptyEl = q(root, '[wf-xano-empty]')
-    this.loaderEl = q(root, '[wf-xano-loader]')
-    this.errorEl = q(root, '[wf-xano-error]')
+    this.template = q(root, elSel('template'))
+    this.emptyEl = q(root, elSel('empty'))
+    this.loaderEl = q(root, elSel('loader'))
+    this.errorEl = q(root, elSel('error'))
     this.listeners = {}
     this._searchTimer = null
     this._seq = 0
@@ -331,7 +349,7 @@
       return
     }
     if (!this.template) {
-      console.error('[wf-xano] missing [wf-xano-template] inside', root)
+      console.error('[wf-xano] missing template (wf-xano-element="template") inside', root)
       return
     }
     this.ok = true
@@ -353,7 +371,15 @@
       return !declared || declared === self.key
     })
     if (!this.key) return inside
-    var outside = qa(document, sel + '[wf-xano-instance="' + this.key + '"]').filter(function (el) {
+    // Append the instance scope to EVERY branch of a comma-separated
+    // selector — naive concatenation would scope only the last branch.
+    var scoped = sel
+      .split(',')
+      .map(function (part) {
+        return part.trim() + '[wf-xano-instance="' + self.key + '"]'
+      })
+      .join(', ')
+    var outside = qa(document, scoped).filter(function (el) {
       return !self.root.contains(el)
     })
     return inside.concat(outside)
@@ -477,7 +503,7 @@
       )
     })
     // Pagination prev / next.
-    this.qa('[wf-xano-page-prev]').forEach(function (el) {
+    this.qa(elSel('page-prev')).forEach(function (el) {
       el.addEventListener(
         'click',
         function (e) {
@@ -487,7 +513,7 @@
         signal,
       )
     })
-    this.qa('[wf-xano-page-next]').forEach(function (el) {
+    this.qa(elSel('page-next')).forEach(function (el) {
       el.addEventListener(
         'click',
         function (e) {
@@ -600,7 +626,7 @@
     var self = this
     result.items.forEach(function (item) {
       var card = self.template.cloneNode(true)
-      card.removeAttribute('wf-xano-template')
+      clearRole(card, 'template')
       card.setAttribute('wf-xano-item', '')
       card.style.display = ''
       if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
@@ -610,13 +636,13 @@
     // Counts: total + visible range ("Showing X–Y of Z").
     var from = result.items.length ? (result.page - 1) * this.perPage + 1 : 0
     var to = result.items.length ? from + result.items.length - 1 : 0
-    this.qa('[wf-xano-total]').forEach(function (el) {
+    this.qa(elSel('total')).forEach(function (el) {
       el.textContent = String(result.total)
     })
-    this.qa('[wf-xano-count-from]').forEach(function (el) {
+    this.qa(elSel('count-from')).forEach(function (el) {
       el.textContent = String(from)
     })
-    this.qa('[wf-xano-count-to]').forEach(function (el) {
+    this.qa(elSel('count-to')).forEach(function (el) {
       el.textContent = String(to)
     })
     this.renderPagination(result)
@@ -624,14 +650,14 @@
 
   Instance.prototype.renderPagination = function (result) {
     var self = this
-    this.qa('[wf-xano-page-prev]').forEach(function (el) {
+    this.qa(elSel('page-prev')).forEach(function (el) {
       el.classList.toggle('is-disabled', result.page <= 1)
     })
-    this.qa('[wf-xano-page-next]').forEach(function (el) {
+    this.qa(elSel('page-next')).forEach(function (el) {
       el.classList.toggle('is-disabled', result.page >= result.pages)
     })
 
-    var tmpl = this.q('[wf-xano-page-number]')
+    var tmpl = this.q(elSel('page-number'))
     if (!tmpl) return
     var parent = tmpl.parentNode
     // Clear old page buttons (keep hidden template).
@@ -646,7 +672,7 @@
     for (var p = start; p <= end; p++) {
       ;(function (page) {
         var btn = tmpl.cloneNode(true)
-        btn.removeAttribute('wf-xano-page-number')
+        clearRole(btn, 'page-number')
         btn.setAttribute('wf-xano-page-num', '')
         btn.style.display = ''
         btn.textContent = String(page)
@@ -717,7 +743,7 @@
   /* ============================ BOOTSTRAP ============================= */
   function init(scope) {
     var root = scope || document
-    qa(root, '[wf-xano-list]').forEach(function (el) {
+    qa(root, elSel('list')).forEach(function (el) {
       if (el.__wfXano) return
       instances.push(new Instance(el))
     })
