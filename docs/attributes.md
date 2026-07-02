@@ -56,9 +56,24 @@ These work on any descendant of the template **and on the template root itself**
 
 | Attribute | Value | Description |
 | --- | --- | --- |
-| `wf-xano-filter` | field name | Any input/select whose value becomes request param `field`, re-fetching on `change`. **Checkboxes** sharing a field form a group: checked values combine into a comma-separated param. **Radios** send the checked one's value. |
+| `wf-xano-filter` | field name | **Form controls** (input/select): value becomes request param `field`, re-fetching on `change`. **Checkboxes** sharing a field form a group: checked values combine into a comma-separated param. **Radios** send the checked one's value. **Any other element** (tab, button, link…) becomes a click filter: clicking sends its `wf-xano-value` (empty value = the "All" option, clears the param). |
+| `wf-xano-value` | filter value | The real value for checkboxes/radios (Webflow submits `on`) and for click filters. |
+| `wf-xano-toggle` | `true` | On a click filter: clicking the active option again clears it (facet-style toggle). Default is tab semantics (re-click is a no-op). |
 | `wf-xano-search` | field name | Text input, debounced → param `field`. |
 | `wf-xano-sort` | param name (optional) | Select whose value becomes the sort param. Defaults to `sort`; give the attribute a value to rename it (`wf-xano-sort="sort_by"`). |
+
+Active filter state is reflected with an **`is-active`** class — on the click-filter element
+itself, and on the closest `<label>` of checked checkbox/radio filters (styleable in Webflow).
+Controls are hydrated from the URL on load when [URL sync](#settings) is on.
+
+### Clear & filter tags (Finsweet grammar)
+
+| Attribute | Description |
+| --- | --- |
+| `wf-xano-element="clear"` | Click clears **all** user filters (static `wf-xano-param-*` values are kept). Add `wf-xano-filter="field"` to clear only that field. |
+| `wf-xano-element="tag"` | Template for active-filter chips — cloned once per user-set filter **value** (comma groups render one chip per value). The original stays hidden. |
+| `wf-xano-element="tag-field"` / `="tag-value"` | Elements inside the tag showing the field name / the value. |
+| `wf-xano-element="tag-remove"` | Click removes that value from its filter group (falls back to the whole tag element if absent). |
 
 ## Settings
 

@@ -591,4 +591,126 @@ const FULL_PAGE1 = {
   console.log('PASS 14: v0.3.0 element="list" root alias (with source)')
 }
 
+// ---------- Test 15: click filters (tabs) — set, All-clears, is-active management ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-source="g:p" wf-xano-auth="none">
+      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="">All</a>
+      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Active">Open</a>
+      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Closed">Closed</a>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  w.fetch = (url, opts) => { bodies.push(JSON.parse(opts.body)); return makeRes(PAGE([{ id: 1, title: 'T' }], 1)) }
+  w.eval(LIB)
+  await waitFor(() => bodies.length === 1)
+  const tabs = [...w.document.querySelectorAll('.tab')]
+  await waitFor(() => tabs[0].classList.contains('is-active'))
+  assert.ok(tabs[0].classList.contains('is-active'), '"All" tab active when no filter set')
+  tabs[2].click()
+  await waitFor(() => bodies.length === 2)
+  assert.equal(bodies[1].status, 'Closed', 'clicking a tab sets the param')
+  assert.equal(bodies[1].page, 1, 'filter click resets page')
+  await waitFor(() => tabs[2].classList.contains('is-active'))
+  assert.ok(!tabs[0].classList.contains('is-active'), '"All" no longer active')
+  tabs[0].click()
+  await waitFor(() => bodies.length === 3)
+  assert.equal(bodies[2].status, undefined, '"All" (empty value) clears the param')
+  console.log('PASS 15: click filters (tabs) + is-active')
+}
+
+// ---------- Test 16: clear element — all filters vs one field; statics preserved ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-param-scope="mine">
+      <select wf-xano-filter="status"><option value=""></option><option value="Active">Active</option></select>
+      <input type="text" wf-xano-search="q">
+      <a href="#" wf-xano-element="clear" wf-xano-filter="status">clear status</a>
+      <a href="#" id="clear-all" wf-xano-element="clear">clear all</a>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  w.fetch = (url, opts) => { bodies.push(JSON.parse(opts.body)); return makeRes(PAGE([], 0)) }
+  w.eval(LIB)
+  await waitFor(() => bodies.length === 1)
+  const inst = w.document.querySelector('[wf-xano-element="wrapper"]').__wfXano
+  inst.setParam('status', 'Active')
+  await waitFor(() => bodies.length === 2)
+  inst.setParam('q', 'designer')
+  await waitFor(() => bodies.length === 3)
+  w.document.querySelector('[wf-xano-element="clear"][wf-xano-filter="status"]').click()
+  await waitFor(() => bodies.length === 4)
+  assert.equal(bodies[3].status, undefined, 'field clear removed status')
+  assert.equal(bodies[3].q, 'designer', 'field clear kept other filters')
+  w.document.querySelector('#clear-all').click()
+  await waitFor(() => bodies.length === 5)
+  assert.equal(bodies[4].q, undefined, 'clear-all removed user filters')
+  assert.equal(bodies[4].scope, 'mine', 'clear-all preserved static wf-xano-param-*')
+  assert.equal(w.document.querySelector('[wf-xano-search]').value, '', 'clear-all rehydrated the search input')
+  console.log('PASS 16: clear element (per-field + all, statics preserved)')
+}
+
+// ---------- Test 17: filter tags — chip per value, tag-remove drops one value ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none">
+      <input type="checkbox" wf-xano-filter="category" wf-xano-value="Design">
+      <input type="checkbox" wf-xano-filter="category" wf-xano-value="Finance">
+      <div class="tags">
+        <div wf-xano-element="tag"><span wf-xano-element="tag-field"></span>:<span wf-xano-element="tag-value"></span><a href="#" wf-xano-element="tag-remove">×</a></div>
+      </div>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  w.fetch = (url, opts) => { bodies.push(JSON.parse(opts.body)); return makeRes(PAGE([], 0)) }
+  w.eval(LIB)
+  await waitFor(() => bodies.length === 1)
+  const boxes = w.document.querySelectorAll('[wf-xano-filter="category"]')
+  boxes[0].checked = true
+  boxes[0].dispatchEvent(new w.Event('change', { bubbles: true }))
+  await waitFor(() => bodies.length === 2)
+  boxes[1].checked = true
+  boxes[1].dispatchEvent(new w.Event('change', { bubbles: true }))
+  await waitFor(() => bodies.length === 3)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-tag-item]').length === 2)
+  const tags = [...w.document.querySelectorAll('[wf-xano-tag-item]')]
+  assert.equal(tags[0].querySelector('[wf-xano-element="tag-value"]').textContent, 'Design', 'tag shows the value')
+  assert.equal(tags[0].querySelector('[wf-xano-element="tag-field"]').textContent, 'category', 'tag shows the field')
+  tags[0].querySelector('[wf-xano-element="tag-remove"]').click()
+  await waitFor(() => bodies.length === 4)
+  assert.equal(bodies[3].category, 'Finance', 'tag-remove dropped one value from the group')
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-tag-item]').length === 1)
+  assert.ok(!boxes[0].checked, 'tag-remove unchecked the matching checkbox')
+  console.log('PASS 17: filter tags (per-value chips, tag-remove)')
+}
+
+// ---------- Test 18: URL restore hydrates radios + click-filter is-active ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="g:p" wf-xano-auth="none">
+      <label><input type="radio" name="st" wf-xano-filter="status" wf-xano-value="Active">Open</label>
+      <label><input type="radio" name="st" wf-xano-filter="status" wf-xano-value="Closed">Closed</label>
+      <a href="#" class="tab" wf-xano-filter="status" wf-xano-value="Active">Open tab</a>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`,
+    { runScripts: 'outside-only', url: 'https://x.test/page?opps_status=Active' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = (url, opts) => makeRes(PAGE([{ id: 1, title: 'T' }], 1))
+  w.eval(LIB)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1)
+  const radios = w.document.querySelectorAll('input[type="radio"]')
+  assert.ok(radios[0].checked, 'radio matching URL param restored checked')
+  assert.ok(!radios[1].checked, 'other radio unchecked')
+  assert.ok(radios[0].closest('label').classList.contains('is-active'), 'radio label got is-active')
+  assert.ok(w.document.querySelector('.tab').classList.contains('is-active'), 'click filter got is-active from URL state')
+  console.log('PASS 18: URL restore hydrates radios + click-filter active state')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
