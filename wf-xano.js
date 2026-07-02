@@ -39,19 +39,23 @@
  *
  * Minimal markup (canonical since v0.3.0 — role markers are key=value,
  * `wf-xano-element="<name>"`, because Webflow's Designer strips custom
- * attributes that have no value; this also matches the Finsweet
- * `fs-list-element` / wf-algolia `wf-algolia-element` grammar):
- *   <div wf-xano-element="list" wf-xano-source="opp30:brand/opportunities/list">
- *     <div wf-xano-element="template">
- *       <h3 wf-xano-bind="title"></h3>
- *       <span wf-xano-if="status === 'Active'">Live</span>
- *       <a wf-xano-link="id" wf-xano-link-prefix="/detail?id=">View</a>
+ * attributes that have no value; role names follow Finsweet's
+ * `fs-list-element` vocabulary: `wrapper` is the scope root, `list` is
+ * the optional items container — cards default to the template's parent):
+ *   <div wf-xano-element="wrapper" wf-xano-source="opp30:brand/opportunities/list">
+ *     <div wf-xano-element="list">
+ *       <div wf-xano-element="template">
+ *         <h3 wf-xano-bind="title"></h3>
+ *         <span wf-xano-if="status === 'Active'">Live</span>
+ *         <a wf-xano-link="id" wf-xano-link-prefix="/detail?id=">View</a>
+ *       </div>
  *     </div>
  *     <div wf-xano-element="empty">No results yet.</div>
  *     <div wf-xano-element="loader"></div>
  *   </div>
- * Legacy valueless markers (wf-xano-list, wf-xano-template, …) remain
- * supported as aliases.
+ * Aliases kept for markup already in the wild: the valueless markers
+ * (wf-xano-list, wf-xano-template, …) and v0.3.0's `element="list"` AS
+ * THE ROOT when it also carries wf-xano-source.
  * ------------------------------------------------------------------
  */
 ;(function () {
@@ -62,7 +66,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.3.0'
+  var VERSION = '0.4.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -337,6 +341,13 @@
     this.emptyEl = q(root, elSel('empty'))
     this.loaderEl = q(root, elSel('loader'))
     this.errorEl = q(root, elSel('error'))
+    // Optional items container (Finsweet's `list` role). Cards render here;
+    // default is the template's own parent. The root itself never counts
+    // (v0.3.0 markup used element="list" + source on the root).
+    this.listEl =
+      qa(root, '[wf-xano-element="list"]').filter(function (el) {
+        return el !== root
+      })[0] || null
     this.listeners = {}
     this._searchTimer = null
     this._seq = 0
@@ -615,7 +626,7 @@
 
   Instance.prototype.render = function (result) {
     this._pages = result.pages
-    var list = this.template.parentNode
+    var list = this.listEl || this.template.parentNode
     // Remove previously injected clones (keep the hidden template).
     qa(list, '[wf-xano-item]').forEach(function (c) {
       c.remove()
@@ -729,7 +740,7 @@
     if (this._ac) this._ac.abort()
     window.clearTimeout(this._searchTimer)
     if (this.template) {
-      qa(this.template.parentNode, '[wf-xano-item]').forEach(function (c) {
+      qa(this.listEl || this.template.parentNode, '[wf-xano-item]').forEach(function (c) {
         c.remove()
       })
     }
@@ -743,8 +754,15 @@
   /* ============================ BOOTSTRAP ============================= */
   function init(scope) {
     var root = scope || document
-    qa(root, elSel('list')).forEach(function (el) {
+    // Roots: canonical `wrapper`, plus legacy aliases — the bare
+    // wf-xano-list marker and v0.3.0's element="list" WITH wf-xano-source
+    // (source disambiguates a root from Finsweet-style items containers).
+    var sel = elSel('wrapper') + ', [wf-xano-list], [wf-xano-element="list"][wf-xano-source]'
+    qa(root, sel).forEach(function (el) {
       if (el.__wfXano) return
+      if (!el.matches('[wf-xano-element="wrapper"], [wf-xano-wrapper]')) {
+        log('deprecated root marker on', el, '— use wf-xano-element="wrapper"')
+      }
       instances.push(new Instance(el))
     })
     log('initialized', instances.length, 'list(s)')

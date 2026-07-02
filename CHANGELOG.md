@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0 — 2026-07-03
+
+### Changed
+
+- **Finsweet-aligned role names** — the scope root is now `wf-xano-element="wrapper"`
+  (Finsweet's `wrapper`), and `wf-xano-element="list"` becomes what Finsweet means by `list`:
+  the optional items container where rendered cards are appended (defaults to the template's
+  parent, as before). v0.3.0 briefly used `list` for the root, which clashed with the Finsweet
+  grammar (their `list` ≈ wf-algolia's `results`).
+- **Aliases kept, no breaking change** — the bare `wf-xano-list` marker and v0.3.0's
+  `element="list"` + `wf-xano-source` on the same element still initialize as a root
+  (a debug-log deprecation notice is emitted).
+
 ## v0.3.0 — 2026-07-02
 
 ### Changed

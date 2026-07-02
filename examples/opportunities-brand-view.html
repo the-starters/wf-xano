@@ -52,9 +52,9 @@
           • the endpoint's `status` input drives the filter select
 
         Attribute mapping from the old wf-algolia markup:
-          wf-algolia-element="browse"    → wf-xano-element="list" + wf-xano-source
+          wf-algolia-element="browse"    → wf-xano-element="wrapper" + wf-xano-source
           wf-algolia-base-filter          → (deleted — server scopes by $auth)
-          wf-algolia-element="results"    → (no attribute needed — cards render
+          wf-algolia-element="results"    → wf-xano-element="list" (optional — cards render
                                              next to the template)
           wf-algolia-element="template"   → wf-xano-element="template"
           wf-algolia-text="X"             → wf-xano-bind="X"
@@ -131,7 +131,7 @@
       </script>
 
       <div
-        wf-xano-element="list"
+        wf-xano-element="wrapper"
         wf-xano-instance="brand-opps"
         wf-xano-source="opp30:brand/opportunities/list"
         wf-xano-auth="none"
@@ -157,7 +157,7 @@
           <button class="btn-post" type="button" onclick="postJob()">＋ Post opportunity (simulate)</button>
         </div>
 
-        <div class="opportunities-list_collection-list">
+        <div class="opportunities-list_collection-list" wf-xano-element="list">
           <!-- Same card structure/fields as the production .opportunity-card -->
           <a
             wf-xano-element="template"

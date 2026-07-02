@@ -20,7 +20,8 @@ remain supported as aliases.
 
 | Attribute | Required | Applies to | Description |
 | --- | --- | --- | --- |
-| `wf-xano-element="list"` | ✅ | the list wrapper | Marks a list root. Everything else lives inside it (or is linked by an [instance key](#scoping--instance-keys)). |
+| `wf-xano-element="wrapper"` | ✅ | the outer wrapper | Marks the list root/scope (Finsweet's `wrapper`). Settings live here; everything else is found inside it (or linked by an [instance key](#scoping--instance-keys)). |
+| `wf-xano-element="list"` | — | the items container | Optional (Finsweet's `list`): where rendered cards are appended. Defaults to the template's own parent. *(v0.3.0 markup that put `element="list"` + `wf-xano-source` on the root still initializes as a root — deprecated alias.)* |
 | `wf-xano-element="template"` | ✅ | the card | The item template. Cloned once per item; the original stays hidden. Rendered clones get `wf-xano-item` and `data-wf-xano-id="<item.id>"`. |
 | `wf-xano-element="empty"` | — | any element | Shown when the response has 0 items. |
 | `wf-xano-element="loader"` | — | any element | Shown while a request is in flight. |
@@ -63,7 +64,7 @@ These work on any descendant of the template **and on the template root itself**
 
 Add these to the elements above to tune behavior.
 
-### On the list (`wf-xano-element="list"`)
+### On the wrapper (`wf-xano-element="wrapper"`)
 
 | Attribute | Values | Default | Description |
 | --- | --- | --- | --- |
@@ -108,7 +109,7 @@ instance key and tag the outside element with the same key:
 ```html
 <span wf-xano-element="total" wf-xano-instance="opps"></span>
 
-<div wf-xano-element="list" wf-xano-instance="opps" wf-xano-source="opp30:brand/opportunities/list">
+<div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-source="opp30:brand/opportunities/list">
   …
 </div>
 ```

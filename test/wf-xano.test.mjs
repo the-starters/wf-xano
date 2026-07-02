@@ -429,4 +429,38 @@ const FULL_PAGE1 = {
   console.log('PASS 12: instance-scoped comma selectors (canonical, outside root)')
 }
 
+// ---------- Test 13: v0.4.0 Finsweet-aligned roles — wrapper root + list items container ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none">
+      <div class="grid" wf-xano-element="list">
+        <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      </div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, title: 'W' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'wrapper root initializes')
+  assert.equal(w.document.querySelector('.grid [wf-xano-item] h3').textContent, 'W', 'card rendered inside element="list" container')
+  assert.equal(w.document.querySelector('[wf-xano-element="empty"]').style.display, 'none')
+  console.log('PASS 13: wrapper root + list items container (Finsweet role parity)')
+}
+
+// ---------- Test 14: v0.3.0 root alias — element="list" WITH source still initializes as root ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="list" wf-xano-source="g:p" wf-xano-auth="none">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 9, title: 'Alias' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'v0.3.0 element="list"+source root still works')
+  assert.equal(w.document.querySelector('[wf-xano-item] h3').textContent, 'Alias')
+  console.log('PASS 14: v0.3.0 element="list" root alias (with source)')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
