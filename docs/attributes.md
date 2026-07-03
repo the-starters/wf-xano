@@ -9,6 +9,10 @@ define *what a node is*, **Settings** tune *how it behaves*.
 - [Scoping & instance keys](#scoping--instance-keys)
 - [Requests](#requests)
 
+> Setting up a page (or the Xano side) from scratch? The
+> [Prompt Library](https://the-starters.github.io/wf-xano/prompts/) has ready-made structures and
+> prompts using every attribute below.
+
 ## Elements
 
 Structural roles use one key=value attribute: **`wf-xano-element="<name>"`** (like Finsweet's

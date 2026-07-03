@@ -109,4 +109,6 @@ The handshake is optimized for cold boot (since v0.5.0):
   where every list is `wf-xano-auth="none"`.
 
 Requires the [memberstack-x](https://www.memberstack.com/) script to be loaded first, and a Xano
-endpoint that exchanges a Memberstack JWT for a Xano auth token.
+endpoint that exchanges a Memberstack JWT for a Xano auth token — the
+[Prompt Library](https://the-starters.github.io/wf-xano/prompts/#x3) has a prompt and checklist for
+building that endpoint.

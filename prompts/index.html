@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wf-xano · prompt library</title>
+    <style>
+      body { font: 15px/1.6 -apple-system, system-ui, sans-serif; margin: 0; background: #f5f5f3; color: #23281f; }
+      .wrap { max-width: 860px; margin: 48px auto; padding: 0 20px; }
+      h1 { font-size: 24px; margin-bottom: 4px; }
+      h2 { font-size: 19px; margin: 40px 0 4px; padding-top: 8px; border-top: 1px solid #e4e4df; }
+      .sub { color: #66705e; margin-top: 0; }
+      code { background: #ecece8; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      a { color: #434b43; }
+      .toc { font-size: 14px; color: #66705e; margin: 18px 0 6px; }
+      .toc a { margin-right: 10px; }
+
+      /* Settings bar */
+      .settings { position: sticky; top: 0; z-index: 5; background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 12px 16px; margin: 20px 0; box-shadow: 0 2px 10px rgba(35, 40, 31, 0.05); }
+      .settings h2 { border: 0; margin: 0 0 2px; padding: 0; font-size: 14px; }
+      .settings p { margin: 0 0 8px; font-size: 12.5px; color: #8a917f; }
+      .settings .fields { display: flex; flex-wrap: wrap; gap: 8px; }
+      .settings label { flex: 1 1 180px; font-size: 12px; color: #66705e; }
+      .settings input { display: block; width: 100%; box-sizing: border-box; margin-top: 2px; padding: 6px 8px; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid #e4e4df; border-radius: 6px; background: #fbfbfa; color: #23281f; }
+      .settings input:focus { outline: none; border-color: #434b43; }
+
+      /* Entry cards */
+      .entry { background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+      .entry h3 { margin: 0 0 4px; font-size: 16px; }
+      .entry > p { margin: 0 0 10px; color: #66705e; font-size: 14px; }
+      .tokens { font-size: 12.5px; color: #8a917f; margin: 0 0 10px; }
+      .tokens code { background: #f2efe6; border: 1px dashed #d9d2bd; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
+      .actions button { font: 13px/1.4 -apple-system, system-ui, sans-serif; padding: 7px 12px; border: 1px solid #434b43; border-radius: 8px; background: #434b43; color: #fff; cursor: pointer; }
+      .actions button:hover { background: #23281f; border-color: #23281f; }
+      .actions button.alt { background: #fff; color: #434b43; }
+      .actions button.alt:hover { background: #ecece8; }
+      .actions button.is-copied { background: #3d7a44; border-color: #3d7a44; color: #fff; }
+      .actions button.is-failed { background: #a13d34; border-color: #a13d34; color: #fff; }
+      .experimental { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; background: #f2e8d5; color: #8a6d2f; border-radius: 4px; padding: 1px 6px; vertical-align: 1px; }
+
+      details { margin: 8px 0 0; }
+      details summary { cursor: pointer; font-size: 13px; color: #66705e; }
+      details[open] summary { margin-bottom: 6px; }
+      pre.copy-src { background: #23281f; color: #e9ede4; border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 0; }
+
+      .callout { background: #fdf8ec; border: 1px solid #eadfbf; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #6d5c2e; margin: 10px 0 0; }
+      .note { font-size: 13px; color: #8a917f; margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>wf-xano prompt library</h1>
+      <p class="sub">Copy-paste prompts, checklists, and Webflow components to stand up both halves of a
+        <a href="https://github.com/the-starters/wf-xano">wf-xano</a> list — the Xano backend and the Webflow markup.
+        Every entry ships as an <strong>AI prompt</strong> (paste into Xano&rsquo;s AI builder, ChatGPT, or Claude)
+        and/or a <strong>manual checklist</strong>, plus ready-made Webflow structures.</p>
+
+      <p class="toc">
+        <a href="#xano">1. Xano backend</a>
+        <a href="#webflow">2. Webflow markup</a>
+        <a href="#recipes">3. Recipes</a>
+      </p>
+
+      <div class="settings">
+        <h2>Your project</h2>
+        <p>Filled values are substituted into everything you copy (stored in your browser only).
+          Empty fields copy through as <code>{{…}}</code> placeholders to replace by hand.</p>
+        <div class="fields">
+          <label>Xano base URL <code>{{XANO_BASE}}</code>
+            <input id="set-xano-base" type="text" placeholder="https://x8ab-1234-abcd.n7c.xano.io" spellcheck="false" />
+          </label>
+          <label>API group <code>{{API_GROUP}}</code>
+            <input id="set-api-group" type="text" placeholder="opp30" spellcheck="false" />
+          </label>
+          <label>Auth group <code>{{AUTH_GROUP}}</code>
+            <input id="set-auth-group" type="text" placeholder="g1vmSLWh (wf-xano default)" spellcheck="false" />
+          </label>
+        </div>
+      </div>
+
+      <!-- ============================================================ -->
+      <h2 id="xano">1. Xano backend</h2>
+      <p class="sub">Three steps: tables → paged list endpoint → auth. The endpoint&rsquo;s response shape is the
+        one hard contract wf-xano depends on.</p>
+
+      <section class="entry" id="x1">
+        <h3>X1 · Database tables</h3>
+        <p>Creates an example <code>opportunities</code> + <code>brands</code> pair — swap in your own domain.
+          The table reference matters: list responses later expose the joined record as
+          <code>brand.company_name</code> for dot-path binds.</p>
+        <p class="tokens">Tokens: <code>{{TABLE}}</code></p>
+        <div class="actions">
+          <button data-src="src-x1-prompt">Copy AI prompt</button>
+          <button class="alt" data-src="src-x1-manual">Copy manual checklist</button>
+        </div>
+        <details>
+          <summary>AI prompt</summary>
+          <pre class="copy-src" id="src-x1-prompt">Set up the Xano database tables behind a Webflow list powered by the wf-xano library.
+
+Create a table named `brands` with:
+- company_name (text)
+(id and created_at are added by Xano automatically.)
+
+Create a table named `{{TABLE}}` with:
+- title (text)
+- description (text)
+- status (enum: Active, Closed, Draft — default Draft)
+- project_type (text)
+- budget (integer)
+- budget_frequency (text — e.g. "fixed", "monthly")
+- published_at (timestamp, nullable)
+- brand_id (table reference → brands)
+
+Seed sample data: 3 rows in `brands`, and 6+ rows in `{{TABLE}}` with a mix of
+statuses and budgets, each referencing a brand via brand_id — enough for a paged
+list to have something to render.
+
+Important: keep brand_id as a real table reference. The list endpoint (next step)
+resolves it with an addon so each item exposes the joined record as
+`brand.company_name` — the Webflow side binds dot paths like
+wf-xano-bind="brand.company_name".</pre>
+        </details>
+        <details>
+          <summary>Manual checklist</summary>
+          <pre class="copy-src" id="src-x1-manual">X1 — Create the tables in the Xano UI
+
+1. Database → Add Table → name it "brands".
+2. Add field: company_name (Text). (id and created_at are created automatically.)
+3. Database → Add Table → name it "{{TABLE}}".
+4. Add fields:
+   - title — Text
+   - description — Text
+   - status — Enum, values: Active, Closed, Draft (default Draft)
+   - project_type — Text
+   - budget — Integer
+   - budget_frequency — Text
+   - published_at — Timestamp (allow null)
+   - brand_id — Table Reference → brands
+5. Open each table's records view and add sample rows: 3 brands, 6+ {{TABLE}}
+   rows with mixed statuses, each pointing at a brand via brand_id.</pre>
+        </details>
+      </section>
+
+      <section class="entry" id="x2">
+        <h3>X2 · Paged list endpoint</h3>
+        <p>The heart of the contract: a <code>POST</code> endpoint returning Xano&rsquo;s standard paging
+          metadata — <code>items / itemsTotal / curPage / pageTotal / nextPage</code> — which wf-xano
+          normalizes. Filter inputs here (<code>status</code>, <code>q</code>, <code>sort</code>) match the
+          Webflow controls in <a href="#w2">W2</a> exactly.</p>
+        <p class="tokens">Tokens: <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code> <code>{{TABLE}}</code> <code>{{XANO_BASE}}</code></p>
+        <div class="actions">
+          <button data-src="src-x2-prompt">Copy AI prompt</button>
+          <button class="alt" data-src="src-x2-manual">Copy manual checklist</button>
+        </div>
+        <details>
+          <summary>AI prompt</summary>
+          <pre class="copy-src" id="src-x2-prompt">Create a Xano API endpoint that serves a paged list to the wf-xano Webflow
+library. The response shape is a hard contract — do not rename any keys.
+
+Endpoint: POST /{{ENDPOINT_PATH}}   (API group: {{API_GROUP}})
+
+Inputs:
+- page (integer, default 1)
+- per_page (integer, default 20)
+- status (text, optional)
+- q (text, optional — free-text search)
+- sort (text, optional — whitelist: "newest", "oldest", "budget_high", "budget_low")
+
+Function stack:
+1. Query All Records on the `{{TABLE}}` table with paging ENABLED:
+   - Bind "page" to the page input and "per page" to the per_page input.
+   - Enable the paging METADATA output (Xano's "include paging metadata"
+     option) so the result carries itemsTotal / curPage / pageTotal / nextPage.
+   - Add an addon that attaches the referenced `brands` record to each item
+     under the output name `brand`, so items expose brand.company_name.
+2. Filters — apply each only when its input is non-empty:
+   - status: where status == input status (skip when empty or "*")
+   - q: where title OR description contains the text, case-insensitive
+   - sort: "newest" → published_at desc, "oldest" → published_at asc,
+     "budget_high" → budget desc, "budget_low" → budget asc.
+     Default published_at desc. Reject values outside the whitelist.
+3. Return the paged query result directly.
+
+Response contract (exactly this shape — wf-xano normalizes these keys):
+{
+  "items": [
+    { "id": 1, "title": "…", "description": "…", "status": "Active",
+      "project_type": "…", "budget": 500, "budget_frequency": "fixed",
+      "published_at": 1719964800000,
+      "brand": { "company_name": "…" } }
+  ],
+  "itemsTotal": 45,
+  "curPage": 1,
+  "pageTotal": 3,
+  "nextPage": 2
+}
+
+Notes:
+- wf-xano sends POST with a JSON body { ...filters, page, per_page }. If the
+  Webflow side is later switched to wf-xano-method="GET", the same values
+  arrive as query-string parameters — Xano inputs accept both, so use inputs
+  rather than parsing the body manually.
+- Leave the endpoint public for now; auth is a separate step.</pre>
+        </details>
+        <details>
+          <summary>Manual checklist</summary>
+          <pre class="copy-src" id="src-x2-manual">X2 — Build the paged list endpoint in the Xano UI
+
+1. Open (or create) the API group {{API_GROUP}} → Add API Endpoint →
+   verb POST, path /{{ENDPOINT_PATH}}.
+2. Add inputs: page (Integer, default 1), per_page (Integer, default 20),
+   status (Text, optional), q (Text, optional), sort (Text, optional).
+3. Add a "Query All Records" function on {{TABLE}}:
+   - Paging tab: enable paging; bind page → input page, per page → input
+     per_page; tick the option that includes paging metadata in the output.
+   - Addons: attach the brands record referenced by brand_id, output name
+     "brand".
+   - Filters: status == input.status only when input.status is set (and not
+     "*"); a case-insensitive contains on title/description from input.q;
+     sorting driven by input.sort (newest/oldest/budget_high/budget_low),
+     default published_at desc.
+4. Set the endpoint response to the query result as-is — the output must be
+   the object with items / itemsTotal / curPage / pageTotal / nextPage keys
+   (Xano's standard paged-metadata shape; do not restructure it).
+5. Publish, then smoke-test from a terminal:
+
+   curl -s -X POST '{{XANO_BASE}}/api:{{API_GROUP}}/{{ENDPOINT_PATH}}' \
+     -H 'Content-Type: application/json' \
+     -d '{"page":1,"per_page":5}'
+
+   Confirm the response has all five keys and items is an array.</pre>
+        </details>
+      </section>
+
+      <section class="entry" id="x3">
+        <h3>X3 · Auth — trade-token endpoint + member scoping</h3>
+        <p>wf-xano&rsquo;s default auth (<code>wf-xano-auth="memberstack"</code>) trades the visitor&rsquo;s
+          Memberstack JWT for a Xano token at
+          <code>{XANO_BASE}/api:{AUTH_GROUP}/auth/trade-token/v3</code>, then sends
+          <code>Authorization: Bearer</code> on every list request. Rows are scoped server-side from
+          <code>$auth</code> — never by a client-sent id.</p>
+        <p class="tokens">Tokens: <code>{{AUTH_GROUP}}</code> <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code> <code>{{XANO_BASE}}</code></p>
+        <div class="actions">
+          <button data-src="src-x3-prompt">Copy AI prompt</button>
+          <button class="alt" data-src="src-x3-manual">Copy manual checklist</button>
+        </div>
+        <details>
+          <summary>AI prompt</summary>
+          <pre class="copy-src" id="src-x3-prompt">Add Memberstack authentication to a Xano backend used by the wf-xano Webflow
+library.
+
+Part A — trade-token endpoint
+Create: POST /auth/trade-token/v3 in API group {{AUTH_GROUP}}.
+(wf-xano's default trade URL is
+{{XANO_BASE}}/api:{{AUTH_GROUP}}/auth/trade-token/v3 — keep this path unless
+WfXanoConfig.tradeTokenPath is also changed on the Webflow side.)
+
+- Input: token (text) — a Memberstack member JWT, arriving as ?token=&lt;jwt&gt;.
+- Function stack:
+  1. Verify the JWT against Memberstack (Memberstack's verify endpoint or
+     JWT decode with the app's public key) and extract member id + email.
+  2. Find the row in the `users` table where memberstack_id == member id;
+     create it if missing (store memberstack_id and email). The users table
+     must be configured as the workspace's authentication table.
+  3. Create a Xano authentication token ("Create Authentication Token"
+     function) for that user record with a sensible TTL (e.g. 86400).
+  4. Return the token. wf-xano accepts either the raw token string as the
+     whole response body, or a JSON object { "authToken": "…" }
+     ({ "token": "…" } also works).
+
+Part B — lock down and member-scope the list endpoint
+- Mark the list endpoint ({{API_GROUP}}: POST /{{ENDPOINT_PATH}}) — or its
+  whole API group — as requiring authentication, so requests without a valid
+  Bearer token get a 401.
+- In its Query All Records, add a where clause scoping rows to the
+  authenticated user: e.g. brand_id == the brand owned by the user record
+  behind $auth (the token's user id). Scoping must derive from $auth
+  server-side — never trust a client-sent member id.</pre>
+        </details>
+        <details>
+          <summary>Manual checklist</summary>
+          <pre class="copy-src" id="src-x3-manual">X3 — Wire up Memberstack auth in the Xano UI
+
+1. Create a `users` table (if missing): memberstack_id (Text, unique),
+   email (Text). Enable it as the authentication table (workspace settings →
+   Authentication).
+2. In API group {{AUTH_GROUP}}, add endpoint POST /auth/trade-token/v3 with
+   input token (Text).
+3. Function stack: verify the Memberstack JWT (External API Request to
+   Memberstack), find-or-create the users row by memberstack_id, then
+   "Create Authentication Token" for that row (TTL e.g. 86400).
+4. Return the token — raw string or { "authToken": token }.
+5. Open the list endpoint from X2 → require authentication on it (or its
+   API group).
+6. In its Query All Records, add a where clause tying rows to $auth (e.g.
+   via the user's brand), so each member only sees their own rows.
+7. Verify: logged out, the list endpoint returns 401. On the published
+   Webflow page (memberstack-x loaded first), wf-xano trades the JWT
+   automatically — wf-xano-auth="memberstack" is the default — and the
+   list renders member-scoped rows.</pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ -->
+      <h2 id="webflow">2. Webflow markup</h2>
+      <p class="sub">Each structure ships three ways: an <strong>HTML snippet</strong> for an Embed element
+        (guaranteed path), an <strong>AI prompt</strong> for building native Designer elements, and a
+        <strong>Copy for Webflow</strong> button <span class="experimental">experimental</span> that puts
+        native elements on your clipboard — click it, then paste straight onto the Designer canvas.</p>
+
+      <section class="entry" id="w1">
+        <h3>W1 · Basic list structure</h3>
+        <p>Wrapper + template card (binds, date format, status pill, whole-card link) +
+          empty/loader/error states. The minimum viable wf-xano list.</p>
+        <p class="tokens">Tokens: <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code> <code>{{DETAIL_URL_PREFIX}}</code></p>
+        <div class="actions">
+          <button data-src="src-w1-html">Copy HTML snippet</button>
+          <button class="alt" data-src="src-w1-prompt">Copy AI prompt</button>
+          <button class="alt" data-src="xscp-basic-list" data-wf="true">Copy for Webflow <span class="experimental">experimental</span></button>
+        </div>
+        <details>
+          <summary>HTML snippet (paste into a Webflow Embed)</summary>
+          <pre class="copy-src" id="src-w1-html">&lt;div wf-xano-element="wrapper" wf-xano-source="{{API_GROUP}}:{{ENDPOINT_PATH}}"&gt;
+  &lt;div wf-xano-element="list"&gt;
+    &lt;a wf-xano-element="template" wf-xano-link="id" wf-xano-link-prefix="{{DETAIL_URL_PREFIX}}"&gt;
+      &lt;h3 wf-xano-bind="title"&gt;&lt;/h3&gt;
+      &lt;p wf-xano-bind="description"&gt;&lt;/p&gt;
+      &lt;div&gt;
+        &lt;span wf-xano-bind="brand.company_name"&gt;&lt;/span&gt; ·
+        &lt;time wf-xano-bind="published_at" wf-xano-format="date"&gt;&lt;/time&gt;
+      &lt;/div&gt;
+      &lt;span wf-xano-if="status === 'Active'" wf-xano-display="inline-block"&gt;Active&lt;/span&gt;
+    &lt;/a&gt;
+  &lt;/div&gt;
+  &lt;div wf-xano-element="empty" style="display:none"&gt;Nothing here yet.&lt;/div&gt;
+  &lt;div wf-xano-element="loader"&gt;Loading…&lt;/div&gt;
+  &lt;div wf-xano-element="error" style="display:none"&gt;Something went wrong — try reloading.&lt;/div&gt;
+&lt;/div&gt;</pre>
+        </details>
+        <details>
+          <summary>AI prompt (native Designer elements)</summary>
+          <pre class="copy-src" id="src-w1-prompt">Build a Webflow structure for a wf-xano list. Create NATIVE Webflow elements
+(not an Embed) and set each custom attribute exactly as written — every
+attribute needs a value, because Webflow strips valueless custom attributes.
+
+1. Div Block — class "opps-wrapper"
+   - wf-xano-element = wrapper
+   - wf-xano-source = {{API_GROUP}}:{{ENDPOINT_PATH}}
+2. Inside it: Div Block — class "opps-list"
+   - wf-xano-element = list
+3. Inside the list: Link Block — class "opps-card"
+   - wf-xano-element = template
+   - wf-xano-link = id
+   - wf-xano-link-prefix = {{DETAIL_URL_PREFIX}}
+   Inside the card:
+   - Heading H3 — class "opps-card-title" — wf-xano-bind = title
+   - Paragraph — class "opps-card-desc" — wf-xano-bind = description
+   - Text Block — class "opps-card-brand" — wf-xano-bind = brand.company_name
+   - Text Block — class "opps-card-date" —
+     wf-xano-bind = published_at, wf-xano-format = date
+   - Text Block — class "opps-card-badge" — text "Active" —
+     wf-xano-if = status === 'Active', wf-xano-display = inline-block
+4. Back inside the wrapper, as siblings of the list:
+   - Div Block "opps-empty" — wf-xano-element = empty — text "Nothing here yet."
+   - Div Block "opps-loader" — wf-xano-element = loader — text "Loading…"
+   - Div Block "opps-error" — wf-xano-element = error — text "Something went wrong."
+
+The template card is cloned once per item automatically — do not add more
+cards. The empty/error elements start hidden (display: none); wf-xano shows
+them when needed.</pre>
+        </details>
+        <details>
+          <summary>What "Copy for Webflow" pastes</summary>
+          <div class="callout">Click the button, focus the Designer canvas where the list should go, and press
+            <strong>Cmd/Ctrl+V</strong>. Native elements arrive with classes and all <code>wf-xano-*</code>
+            attributes set. The clipboard format is unofficial — if nothing pastes, use the HTML snippet
+            in an Embed instead.</div>
+        </details>
+      </section>
+
+      <section class="entry" id="w2">
+        <h3>W2 · Full list — filters, search, sort, pagination</h3>
+        <p>Everything W1 has, plus a status select (with the <code>*</code> match-all &ldquo;All&rdquo; option),
+          debounced search, sort, counts, filter-tag chips, clear, and numbered pagination — controls linked
+          from outside the wrapper via <code>wf-xano-instance</code>. Field names (<code>status</code>,
+          <code>q</code>, <code>sort</code>) match the <a href="#x2">X2</a> endpoint inputs.</p>
+        <p class="tokens">Tokens: <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code> <code>{{DETAIL_URL_PREFIX}}</code></p>
+        <div class="actions">
+          <button data-src="src-w2-html">Copy HTML snippet</button>
+          <button class="alt" data-src="src-w2-prompt">Copy AI prompt</button>
+          <button class="alt" data-src="xscp-full-list" data-wf="true">Copy for Webflow <span class="experimental">experimental</span></button>
+        </div>
+        <details>
+          <summary>HTML snippet (paste into a Webflow Embed)</summary>
+          <pre class="copy-src" id="src-w2-html">&lt;!-- Controls can live anywhere on the page — the instance key links them. --&gt;
+&lt;div class="opps-controls"&gt;
+  &lt;input type="text" placeholder="Search…" wf-xano-search="q" wf-xano-instance="opps" /&gt;
+  &lt;select wf-xano-filter="status" wf-xano-instance="opps"&gt;
+    &lt;option value="*"&gt;All statuses&lt;/option&gt;
+    &lt;option&gt;Active&lt;/option&gt;
+    &lt;option&gt;Closed&lt;/option&gt;
+    &lt;option&gt;Draft&lt;/option&gt;
+  &lt;/select&gt;
+  &lt;select wf-xano-sort wf-xano-instance="opps"&gt;
+    &lt;option value="newest"&gt;Newest&lt;/option&gt;
+    &lt;option value="oldest"&gt;Oldest&lt;/option&gt;
+    &lt;option value="budget_high"&gt;Budget: high → low&lt;/option&gt;
+    &lt;option value="budget_low"&gt;Budget: low → high&lt;/option&gt;
+  &lt;/select&gt;
+  &lt;button type="button" wf-xano-element="clear" wf-xano-instance="opps"&gt;Clear filters&lt;/button&gt;
+&lt;/div&gt;
+
+&lt;p&gt;
+  Showing &lt;span wf-xano-element="count-from" wf-xano-instance="opps"&gt;0&lt;/span&gt;–&lt;span
+  wf-xano-element="count-to" wf-xano-instance="opps"&gt;0&lt;/span&gt;
+  of &lt;span wf-xano-element="total" wf-xano-instance="opps"&gt;0&lt;/span&gt;
+&lt;/p&gt;
+
+&lt;div class="opps-tags"&gt;
+  &lt;span wf-xano-element="tag" wf-xano-instance="opps" style="display:none"&gt;
+    &lt;span wf-xano-element="tag-field"&gt;&lt;/span&gt;:
+    &lt;span wf-xano-element="tag-value"&gt;&lt;/span&gt;
+    &lt;button type="button" wf-xano-element="tag-remove"&gt;×&lt;/button&gt;
+  &lt;/span&gt;
+&lt;/div&gt;
+
+&lt;div
+  wf-xano-element="wrapper"
+  wf-xano-instance="opps"
+  wf-xano-source="{{API_GROUP}}:{{ENDPOINT_PATH}}"
+  wf-xano-per-page="12"
+  wf-xano-url-sync="true"
+&gt;
+  &lt;div wf-xano-element="list"&gt;
+    &lt;a wf-xano-element="template" wf-xano-link="id" wf-xano-link-prefix="{{DETAIL_URL_PREFIX}}"&gt;
+      &lt;h3 wf-xano-bind="title"&gt;&lt;/h3&gt;
+      &lt;p wf-xano-bind="description"&gt;&lt;/p&gt;
+      &lt;div&gt;
+        &lt;span wf-xano-bind="brand.company_name"&gt;&lt;/span&gt; ·
+        &lt;span wf-xano-bind="project_type"&gt;&lt;/span&gt; ·
+        $&lt;span wf-xano-bind="budget"&gt;&lt;/span&gt; ·
+        &lt;time wf-xano-bind="published_at" wf-xano-format="date"&gt;&lt;/time&gt;
+      &lt;/div&gt;
+      &lt;span wf-xano-if="status === 'Active'" wf-xano-display="inline-block"&gt;Active&lt;/span&gt;
+    &lt;/a&gt;
+  &lt;/div&gt;
+  &lt;div wf-xano-element="empty" style="display:none"&gt;No results — try clearing a filter.&lt;/div&gt;
+  &lt;div wf-xano-element="loader"&gt;Loading…&lt;/div&gt;
+  &lt;div wf-xano-element="error" style="display:none"&gt;Something went wrong — try reloading.&lt;/div&gt;
+  &lt;div class="opps-pagination"&gt;
+    &lt;button type="button" wf-xano-element="page-prev"&gt;‹ Prev&lt;/button&gt;
+    &lt;button type="button" wf-xano-element="page-number"&gt;1&lt;/button&gt;
+    &lt;button type="button" wf-xano-element="page-next"&gt;Next ›&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre>
+        </details>
+        <details>
+          <summary>AI prompt (native Designer elements)</summary>
+          <pre class="copy-src" id="src-w2-prompt">Build a full Webflow list UI for wf-xano: filters, search, sort, counts,
+filter tags, clear, and pagination. Create NATIVE Webflow elements and set
+each custom attribute exactly as written — every attribute needs a value
+(Webflow strips valueless custom attributes). All controls carry
+wf-xano-instance = opps so they can live anywhere on the page.
+
+A. Controls (Div Block "opps-controls", anywhere on the page):
+   - Text input — wf-xano-search = q, wf-xano-instance = opps
+   - Select — wf-xano-filter = status, wf-xano-instance = opps — options:
+     "All statuses" with value * (the match-all sentinel: the Designer
+     cannot author an empty value, so wf-xano treats * as "clear this
+     field"), then Active, Closed, Draft.
+   - Select — wf-xano-sort = sort (the value names the request param; "sort"
+     is also the default), wf-xano-instance = opps — options newest / oldest /
+     budget_high / budget_low (these exact values; the endpoint whitelists them).
+   - Button — wf-xano-element = clear, wf-xano-instance = opps — text
+     "Clear filters".
+
+B. Counts (Paragraph, anywhere): three inline Text Blocks with
+   wf-xano-element = count-from / count-to / total, each with
+   wf-xano-instance = opps, arranged as "Showing X–Y of Z".
+
+C. Filter tags (Div Block "opps-tags", anywhere): one Span —
+   wf-xano-element = tag, wf-xano-instance = opps, display none — containing
+   Text Blocks with wf-xano-element = tag-field and tag-value, and a Button
+   with wf-xano-element = tag-remove (text "×"). It is cloned per active
+   filter value automatically.
+
+D. The list (Div Block "opps-wrapper"):
+   - wf-xano-element = wrapper
+   - wf-xano-instance = opps
+   - wf-xano-source = {{API_GROUP}}:{{ENDPOINT_PATH}}
+   - wf-xano-per-page = 12
+   - wf-xano-url-sync = true
+   Inside, the same structure as the basic list: a Div Block "opps-list"
+   (wf-xano-element = list) holding one Link Block card
+   (wf-xano-element = template, wf-xano-link = id,
+   wf-xano-link-prefix = {{DETAIL_URL_PREFIX}}) with heading/paragraph/text
+   binds (title, description, brand.company_name, project_type, budget,
+   published_at with wf-xano-format = date) and an "Active" badge
+   (wf-xano-if = status === 'Active'); then sibling Div Blocks for
+   wf-xano-element = empty / loader / error (empty and error display: none).
+   - Pagination (Div Block "opps-pagination" inside the wrapper): three
+     Buttons with wf-xano-element = page-prev ("‹ Prev"), page-number ("1"),
+     page-next ("Next ›"). The page-number button is a template — it is
+     cloned per visible page automatically.</pre>
+        </details>
+        <details>
+          <summary>What "Copy for Webflow" pastes</summary>
+          <div class="callout">Same flow as W1 — click, then paste onto the Designer canvas. The search input and
+            selects arrive inside a native Webflow <strong>Form Block</strong> (the Designer&rsquo;s own
+            clipboard format always wraps form controls that way), and they are the least battle-tested part
+            of the unofficial format. <strong>If the paste fails or controls arrive broken, use the HTML
+            snippet in an Embed — it is the guaranteed path.</strong></div>
+        </details>
+      </section>
+
+      <section class="entry" id="w3">
+        <h3>W3 · Install snippet</h3>
+        <p>The config + script pair for Webflow&rsquo;s page settings (before <code>&lt;/body&gt;</code>).
+          When using Memberstack auth it must come <strong>after</strong> the memberstack-x script tag.</p>
+        <p class="tokens">Tokens: <code>{{XANO_BASE}}</code></p>
+        <div class="actions">
+          <button data-src="src-w3-html">Copy install snippet</button>
+        </div>
+        <details open>
+          <summary>Custom-code snippet</summary>
+          <pre class="copy-src" id="src-w3-html">&lt;!-- wf-xano — after memberstack-x when using auth --&gt;
+&lt;script&gt;
+  window.WfXanoConfig = { xanoBase: '{{XANO_BASE}}' }
+&lt;/script&gt;
+&lt;script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.7.0/wf-xano.min.js"&gt;&lt;/script&gt;
+&lt;!-- Pin an exact version for production (as above). @0.7 tracks patches,
+     @latest tracks releases — see the README's Versioning table. --&gt;</pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ -->
+      <h2 id="recipes">3. Recipes</h2>
+      <p class="sub">End-to-end paths through the entries above.</p>
+
+      <section class="entry" id="r1">
+        <h3>R1 · Member-scoped job board</h3>
+        <p>The full stack: tables → paged endpoint → Memberstack auth → install snippet → full list UI.
+          The mega-prompt bundles all three Xano prompts with a contract preamble for a single AI session.</p>
+        <p class="tokens">Tokens: <code>{{TABLE}}</code> <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code> <code>{{AUTH_GROUP}}</code> <code>{{XANO_BASE}}</code></p>
+        <div class="actions">
+          <button data-src="src-r1-preamble,src-x1-prompt,src-x2-prompt,src-x3-prompt">Copy Xano mega-prompt (X1+X2+X3)</button>
+          <button class="alt" data-src="src-r1-wiring">Copy wiring checklist</button>
+        </div>
+        <details>
+          <summary>Mega-prompt preamble (prepended to X1–X3 on copy)</summary>
+          <pre class="copy-src" id="src-r1-preamble">You are setting up a complete Xano backend for a member-scoped list rendered
+in Webflow by the wf-xano library (https://github.com/the-starters/wf-xano).
+Work through the three steps below in order: tables, then the paged list
+endpoint, then Memberstack auth. Two things are hard contracts:
+(1) the list endpoint's response keys — items / itemsTotal / curPage /
+    pageTotal / nextPage — must not be renamed;
+(2) the trade-token endpoint's path — /auth/trade-token/v3 — must not change.</pre>
+        </details>
+        <details>
+          <summary>Wiring checklist</summary>
+          <pre class="copy-src" id="src-r1-wiring">R1 — Wire the halves together
+
+1. Xano: run the three backend steps in order — X1 tables, X2 list endpoint,
+   X3 auth (or paste the mega-prompt into one AI session).
+2. Webflow → page settings → custom code (before &lt;/body&gt;): paste the W3
+   install snippet AFTER the memberstack-x script tag.
+3. Webflow page: add the W2 structure (Embed snippet, AI prompt, or the
+   Copy-for-Webflow paste).
+4. Contract checkpoints:
+   - the wrapper's wf-xano-source ({{API_GROUP}}:{{ENDPOINT_PATH}}) names the
+     endpoint created in X2
+   - the endpoint responds with exactly items / itemsTotal / curPage /
+     pageTotal / nextPage
+   - control field names (status, q, sort) match the endpoint inputs
+   - wf-xano-auth defaults to memberstack — memberstack-x must load first,
+     and the trade-token endpoint from X3 must be live at
+     {{XANO_BASE}}/api:{{AUTH_GROUP}}/auth/trade-token/v3
+   - wf-xano-link-prefix points at a real detail page that reads the id
+5. Publish and open the page logged in as a member who owns rows: the list
+   should render member-scoped data with working filters, search, sort,
+   pagination, and URL sync (reload keeps page + filters).</pre>
+        </details>
+      </section>
+
+      <section class="entry" id="r2">
+        <h3>R2 · Public read-only list</h3>
+        <p>The no-auth variant — a public endpoint and the same markup.</p>
+        <p class="tokens">Tokens: <code>{{API_GROUP}}</code> <code>{{ENDPOINT_PATH}}</code></p>
+        <div class="actions">
+          <button data-src="src-r2-checklist">Copy checklist</button>
+        </div>
+        <details>
+          <summary>Checklist</summary>
+          <pre class="copy-src" id="src-r2-checklist">R2 — Public read-only list (differences from the job board recipe)
+
+1. Skip the auth step (X3) entirely; leave the X2 endpoint public.
+2. On the wrapper add wf-xano-auth="none". Optionally add
+   wf-xano-method="GET" to send params as a query string — the X2 endpoint's
+   inputs accept both POST bodies and query params.
+3. In the W3 install snippet, add preAuth: false to WfXanoConfig — no list
+   needs a token, so skip the parse-time handshake:
+   window.WfXanoConfig = { xanoBase: '{{XANO_BASE}}', preAuth: false }
+4. Everything else is identical: same endpoint contract, same W1/W2 markup.</pre>
+        </details>
+      </section>
+
+      <p class="note">Docs: <a href="https://github.com/the-starters/wf-xano">README</a> ·
+        <a href="https://github.com/the-starters/wf-xano/blob/main/docs/attributes.md">Attribute reference</a> ·
+        <a href="https://github.com/the-starters/wf-xano/blob/main/docs/api.md">API reference</a> ·
+        <a href="../examples/index.html">Examples</a></p>
+    </div>
+
+    <!-- ============================================================
+         Webflow clipboard payloads (@webflow/XscpData) — inert JSON.
+         Maintenance: build the structure once in a real Designer project,
+         copy it, and capture the canonical JSON with ../prompts/inspector.html,
+         then replace these hand-written payloads.
+         ============================================================ -->
+    <script type="application/json" class="wf-copy-src" id="xscp-basic-list">
+{"type":"@webflow/XscpData","payload":{"nodes":[{"_id":"f0e1d2c3-0000-4000-8000-000000000001","text":true,"v":"Brand name"},{"_id":"f0e1d2c3-0000-4000-8000-000000000002","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000003"],"children":["f0e1d2c3-0000-4000-8000-000000000001"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"brand.company_name"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000004","text":true,"v":" · "},{"_id":"f0e1d2c3-0000-4000-8000-000000000005","text":true,"v":"Date"},{"_id":"f0e1d2c3-0000-4000-8000-000000000006","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000007"],"children":["f0e1d2c3-0000-4000-8000-000000000005"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"published_at"},{"name":"wf-xano-format","value":"date"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000008","text":true,"v":"Opportunity title"},{"_id":"f0e1d2c3-0000-4000-8000-000000000009","type":"Heading","tag":"h3","classes":["f0e1d2c3-0000-4000-8000-000000000010"],"children":["f0e1d2c3-0000-4000-8000-000000000008"],"data":{"tag":"h3","xattr":[{"name":"wf-xano-bind","value":"title"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000011","text":true,"v":"Description"},{"_id":"f0e1d2c3-0000-4000-8000-000000000012","type":"Paragraph","tag":"p","classes":["f0e1d2c3-0000-4000-8000-000000000013"],"children":["f0e1d2c3-0000-4000-8000-000000000011"],"data":{"tag":"p","xattr":[{"name":"wf-xano-bind","value":"description"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000014","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000015"],"children":["f0e1d2c3-0000-4000-8000-000000000002","f0e1d2c3-0000-4000-8000-000000000004","f0e1d2c3-0000-4000-8000-000000000006"],"data":{"tag":"div"}},{"_id":"f0e1d2c3-0000-4000-8000-000000000016","text":true,"v":"Active"},{"_id":"f0e1d2c3-0000-4000-8000-000000000017","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000018"],"children":["f0e1d2c3-0000-4000-8000-000000000016"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-if","value":"status === 'Active'"},{"name":"wf-xano-display","value":"inline-block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000019","type":"Link","tag":"a","classes":["f0e1d2c3-0000-4000-8000-000000000020"],"children":["f0e1d2c3-0000-4000-8000-000000000009","f0e1d2c3-0000-4000-8000-000000000012","f0e1d2c3-0000-4000-8000-000000000014","f0e1d2c3-0000-4000-8000-000000000017"],"data":{"tag":"a","attr":{"href":"#"},"link":{"url":"#","mode":"external"},"button":false,"block":"block","xattr":[{"name":"wf-xano-element","value":"template"},{"name":"wf-xano-link","value":"id"},{"name":"wf-xano-link-prefix","value":"{{DETAIL_URL_PREFIX}}"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000021","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000022"],"children":["f0e1d2c3-0000-4000-8000-000000000019"],"data":{"tag":"div","xattr":[{"name":"wf-xano-element","value":"list"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000023","text":true,"v":"Nothing here yet."},{"_id":"f0e1d2c3-0000-4000-8000-000000000024","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000025"],"children":["f0e1d2c3-0000-4000-8000-000000000023"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"empty"},{"name":"wf-xano-display","value":"block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000026","text":true,"v":"Loading…"},{"_id":"f0e1d2c3-0000-4000-8000-000000000027","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000028"],"children":["f0e1d2c3-0000-4000-8000-000000000026"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"loader"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000029","text":true,"v":"Something went wrong — try reloading."},{"_id":"f0e1d2c3-0000-4000-8000-000000000030","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000031"],"children":["f0e1d2c3-0000-4000-8000-000000000029"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"error"},{"name":"wf-xano-display","value":"block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000032","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000033"],"children":["f0e1d2c3-0000-4000-8000-000000000021","f0e1d2c3-0000-4000-8000-000000000024","f0e1d2c3-0000-4000-8000-000000000027","f0e1d2c3-0000-4000-8000-000000000030"],"data":{"tag":"div","xattr":[{"name":"wf-xano-element","value":"wrapper"},{"name":"wf-xano-source","value":"{{API_GROUP}}:{{ENDPOINT_PATH}}"}]}}],"styles":[{"_id":"f0e1d2c3-0000-4000-8000-000000000003","fake":false,"type":"class","name":"opps-card-brand","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000007","fake":false,"type":"class","name":"opps-card-date","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000010","fake":false,"type":"class","name":"opps-card-title","namespace":"","comb":"","styleLess":"margin-top: 0px; margin-bottom: 4px; font-size: 18px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000013","fake":false,"type":"class","name":"opps-card-desc","namespace":"","comb":"","styleLess":"margin-bottom: 8px; color: #66705e;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000015","fake":false,"type":"class","name":"opps-card-meta","namespace":"","comb":"","styleLess":"font-size: 13px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000018","fake":false,"type":"class","name":"opps-card-badge","namespace":"","comb":"","styleLess":"display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 4px; background-color: #e3efe4; color: #3d7a44; font-size: 12px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000020","fake":false,"type":"class","name":"opps-card","namespace":"","comb":"","styleLess":"display: block; margin-bottom: 16px; padding: 20px; border: 1px solid #e4e4df; border-radius: 12px; background-color: #ffffff; color: #23281f; text-decoration: none;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000022","fake":false,"type":"class","name":"opps-list","namespace":"","comb":"","styleLess":"","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000025","fake":false,"type":"class","name":"opps-empty","namespace":"","comb":"","styleLess":"display: none; padding: 20px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000028","fake":false,"type":"class","name":"opps-loader","namespace":"","comb":"","styleLess":"padding: 20px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000031","fake":false,"type":"class","name":"opps-error","namespace":"","comb":"","styleLess":"display: none; padding: 20px; color: #a13d34;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000033","fake":false,"type":"class","name":"opps-wrapper","namespace":"","comb":"","styleLess":"position: relative;","variants":{},"children":[],"selector":null,"origin":null}],"assets":[],"ix1":[],"ix2":{"interactions":[],"events":[],"actionLists":[]}},"meta":{"unlinkedSymbolCount":0,"droppedLinks":0,"dynBindRemovedCount":0,"dynListBindRemovedCount":0,"paginationRemovedCount":0}}
+    </script>
+    <script type="application/json" class="wf-copy-src" id="xscp-full-list">
+{"type":"@webflow/XscpData","payload":{"nodes":[{"_id":"f0e1d2c3-0000-4000-8000-000000000001","type":"FormTextInput","tag":"input","classes":["f0e1d2c3-0000-4000-8000-000000000002"],"children":[],"data":{"tag":"input","attr":{"autofocus":false,"disabled":false,"maxlength":256,"name":"q","data-name":"Search","id":"wfx-search","placeholder":"Search…","required":false,"type":"text"},"form":{"type":"input","name":"Search","passwordPage":false},"xattr":[{"name":"wf-xano-search","value":"q"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000003","type":"FormSelect","tag":"select","classes":["f0e1d2c3-0000-4000-8000-000000000004"],"children":[],"data":{"tag":"select","attr":{"id":"wfx-status","name":"wfx-status","data-name":"Status","multiple":false,"required":false},"form":{"type":"select","name":"Status","opts":[{"v":"*","t":"All statuses"},{"v":"Active","t":"Active"},{"v":"Closed","t":"Closed"},{"v":"Draft","t":"Draft"}]},"xattr":[{"name":"wf-xano-filter","value":"status"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000005","type":"FormSelect","tag":"select","classes":["f0e1d2c3-0000-4000-8000-000000000006"],"children":[],"data":{"tag":"select","attr":{"id":"wfx-sort","name":"wfx-sort","data-name":"Sort","multiple":false,"required":false},"form":{"type":"select","name":"Sort","opts":[{"v":"newest","t":"Newest"},{"v":"oldest","t":"Oldest"},{"v":"budget_high","t":"Budget: high → low"},{"v":"budget_low","t":"Budget: low → high"}]},"xattr":[{"name":"wf-xano-sort","value":"sort"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000007","text":true,"v":"Clear filters"},{"_id":"f0e1d2c3-0000-4000-8000-000000000008","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000009"],"children":["f0e1d2c3-0000-4000-8000-000000000007"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"clear"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000010","type":"FormForm","tag":"form","classes":["f0e1d2c3-0000-4000-8000-000000000011"],"children":["f0e1d2c3-0000-4000-8000-000000000001","f0e1d2c3-0000-4000-8000-000000000003","f0e1d2c3-0000-4000-8000-000000000005","f0e1d2c3-0000-4000-8000-000000000008"],"data":{"tag":"form","attr":{"id":"wfx-filters","name":"wfx-filters","data-name":"wf-xano filters","redirect":"","data-redirect":"","action":"","method":"get"},"form":{"type":"form","name":"wf-xano filters"}}},{"_id":"f0e1d2c3-0000-4000-8000-000000000012","type":"FormWrapper","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000013"],"children":["f0e1d2c3-0000-4000-8000-000000000010"],"data":{"tag":"div","form":{"type":"wrapper"}}},{"_id":"f0e1d2c3-0000-4000-8000-000000000014","text":true,"v":"Showing "},{"_id":"f0e1d2c3-0000-4000-8000-000000000015","text":true,"v":"0"},{"_id":"f0e1d2c3-0000-4000-8000-000000000016","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000017"],"children":["f0e1d2c3-0000-4000-8000-000000000015"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"count-from"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000018","text":true,"v":"–"},{"_id":"f0e1d2c3-0000-4000-8000-000000000019","text":true,"v":"0"},{"_id":"f0e1d2c3-0000-4000-8000-000000000020","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000021"],"children":["f0e1d2c3-0000-4000-8000-000000000019"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"count-to"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000022","text":true,"v":" of "},{"_id":"f0e1d2c3-0000-4000-8000-000000000023","text":true,"v":"0"},{"_id":"f0e1d2c3-0000-4000-8000-000000000024","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000025"],"children":["f0e1d2c3-0000-4000-8000-000000000023"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"total"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000026","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000027"],"children":["f0e1d2c3-0000-4000-8000-000000000014","f0e1d2c3-0000-4000-8000-000000000016","f0e1d2c3-0000-4000-8000-000000000018","f0e1d2c3-0000-4000-8000-000000000020","f0e1d2c3-0000-4000-8000-000000000022","f0e1d2c3-0000-4000-8000-000000000024"],"data":{"tag":"div"}},{"_id":"f0e1d2c3-0000-4000-8000-000000000028","text":true,"v":"field"},{"_id":"f0e1d2c3-0000-4000-8000-000000000029","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000030"],"children":["f0e1d2c3-0000-4000-8000-000000000028"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"tag-field"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000031","text":true,"v":": "},{"_id":"f0e1d2c3-0000-4000-8000-000000000032","text":true,"v":"value"},{"_id":"f0e1d2c3-0000-4000-8000-000000000033","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000034"],"children":["f0e1d2c3-0000-4000-8000-000000000032"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"tag-value"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000035","text":true,"v":"×"},{"_id":"f0e1d2c3-0000-4000-8000-000000000036","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000037"],"children":["f0e1d2c3-0000-4000-8000-000000000035"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"tag-remove"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000038","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000039"],"children":["f0e1d2c3-0000-4000-8000-000000000029","f0e1d2c3-0000-4000-8000-000000000031","f0e1d2c3-0000-4000-8000-000000000033","f0e1d2c3-0000-4000-8000-000000000036"],"data":{"tag":"div","xattr":[{"name":"wf-xano-element","value":"tag"},{"name":"wf-xano-instance","value":"opps"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000040","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000041"],"children":["f0e1d2c3-0000-4000-8000-000000000038"],"data":{"tag":"div"}},{"_id":"f0e1d2c3-0000-4000-8000-000000000042","text":true,"v":"Brand name"},{"_id":"f0e1d2c3-0000-4000-8000-000000000043","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000044"],"children":["f0e1d2c3-0000-4000-8000-000000000042"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"brand.company_name"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000045","text":true,"v":" · "},{"_id":"f0e1d2c3-0000-4000-8000-000000000046","text":true,"v":"Project type"},{"_id":"f0e1d2c3-0000-4000-8000-000000000047","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000048"],"children":["f0e1d2c3-0000-4000-8000-000000000046"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"project_type"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000049","text":true,"v":" · $"},{"_id":"f0e1d2c3-0000-4000-8000-000000000050","text":true,"v":"0"},{"_id":"f0e1d2c3-0000-4000-8000-000000000051","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000052"],"children":["f0e1d2c3-0000-4000-8000-000000000050"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"budget"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000053","text":true,"v":" · "},{"_id":"f0e1d2c3-0000-4000-8000-000000000054","text":true,"v":"Date"},{"_id":"f0e1d2c3-0000-4000-8000-000000000055","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000056"],"children":["f0e1d2c3-0000-4000-8000-000000000054"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-bind","value":"published_at"},{"name":"wf-xano-format","value":"date"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000057","text":true,"v":"Opportunity title"},{"_id":"f0e1d2c3-0000-4000-8000-000000000058","type":"Heading","tag":"h3","classes":["f0e1d2c3-0000-4000-8000-000000000059"],"children":["f0e1d2c3-0000-4000-8000-000000000057"],"data":{"tag":"h3","xattr":[{"name":"wf-xano-bind","value":"title"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000060","text":true,"v":"Description"},{"_id":"f0e1d2c3-0000-4000-8000-000000000061","type":"Paragraph","tag":"p","classes":["f0e1d2c3-0000-4000-8000-000000000062"],"children":["f0e1d2c3-0000-4000-8000-000000000060"],"data":{"tag":"p","xattr":[{"name":"wf-xano-bind","value":"description"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000063","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000064"],"children":["f0e1d2c3-0000-4000-8000-000000000043","f0e1d2c3-0000-4000-8000-000000000045","f0e1d2c3-0000-4000-8000-000000000047","f0e1d2c3-0000-4000-8000-000000000049","f0e1d2c3-0000-4000-8000-000000000051","f0e1d2c3-0000-4000-8000-000000000053","f0e1d2c3-0000-4000-8000-000000000055"],"data":{"tag":"div"}},{"_id":"f0e1d2c3-0000-4000-8000-000000000065","text":true,"v":"Active"},{"_id":"f0e1d2c3-0000-4000-8000-000000000066","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000067"],"children":["f0e1d2c3-0000-4000-8000-000000000065"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-if","value":"status === 'Active'"},{"name":"wf-xano-display","value":"inline-block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000068","type":"Link","tag":"a","classes":["f0e1d2c3-0000-4000-8000-000000000069"],"children":["f0e1d2c3-0000-4000-8000-000000000058","f0e1d2c3-0000-4000-8000-000000000061","f0e1d2c3-0000-4000-8000-000000000063","f0e1d2c3-0000-4000-8000-000000000066"],"data":{"tag":"a","attr":{"href":"#"},"link":{"url":"#","mode":"external"},"button":false,"block":"block","xattr":[{"name":"wf-xano-element","value":"template"},{"name":"wf-xano-link","value":"id"},{"name":"wf-xano-link-prefix","value":"{{DETAIL_URL_PREFIX}}"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000070","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000071"],"children":["f0e1d2c3-0000-4000-8000-000000000068"],"data":{"tag":"div","xattr":[{"name":"wf-xano-element","value":"list"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000072","text":true,"v":"Nothing here yet."},{"_id":"f0e1d2c3-0000-4000-8000-000000000073","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000074"],"children":["f0e1d2c3-0000-4000-8000-000000000072"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"empty"},{"name":"wf-xano-display","value":"block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000075","text":true,"v":"Loading…"},{"_id":"f0e1d2c3-0000-4000-8000-000000000076","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000077"],"children":["f0e1d2c3-0000-4000-8000-000000000075"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"loader"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000078","text":true,"v":"Something went wrong — try reloading."},{"_id":"f0e1d2c3-0000-4000-8000-000000000079","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000080"],"children":["f0e1d2c3-0000-4000-8000-000000000078"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"error"},{"name":"wf-xano-display","value":"block"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000081","text":true,"v":"‹ Prev"},{"_id":"f0e1d2c3-0000-4000-8000-000000000082","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000083"],"children":["f0e1d2c3-0000-4000-8000-000000000081"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"page-prev"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000084","text":true,"v":"1"},{"_id":"f0e1d2c3-0000-4000-8000-000000000085","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000086"],"children":["f0e1d2c3-0000-4000-8000-000000000084"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"page-number"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000087","text":true,"v":"Next ›"},{"_id":"f0e1d2c3-0000-4000-8000-000000000088","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000089"],"children":["f0e1d2c3-0000-4000-8000-000000000087"],"data":{"tag":"div","text":true,"xattr":[{"name":"wf-xano-element","value":"page-next"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000090","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000091"],"children":["f0e1d2c3-0000-4000-8000-000000000082","f0e1d2c3-0000-4000-8000-000000000085","f0e1d2c3-0000-4000-8000-000000000088"],"data":{"tag":"div"}},{"_id":"f0e1d2c3-0000-4000-8000-000000000092","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000093"],"children":["f0e1d2c3-0000-4000-8000-000000000070","f0e1d2c3-0000-4000-8000-000000000073","f0e1d2c3-0000-4000-8000-000000000076","f0e1d2c3-0000-4000-8000-000000000079","f0e1d2c3-0000-4000-8000-000000000090"],"data":{"tag":"div","xattr":[{"name":"wf-xano-element","value":"wrapper"},{"name":"wf-xano-instance","value":"opps"},{"name":"wf-xano-source","value":"{{API_GROUP}}:{{ENDPOINT_PATH}}"},{"name":"wf-xano-per-page","value":"12"},{"name":"wf-xano-url-sync","value":"true"}]}},{"_id":"f0e1d2c3-0000-4000-8000-000000000094","type":"Block","tag":"div","classes":["f0e1d2c3-0000-4000-8000-000000000095"],"children":["f0e1d2c3-0000-4000-8000-000000000012","f0e1d2c3-0000-4000-8000-000000000026","f0e1d2c3-0000-4000-8000-000000000040","f0e1d2c3-0000-4000-8000-000000000092"],"data":{"tag":"div"}}],"styles":[{"_id":"f0e1d2c3-0000-4000-8000-000000000002","fake":false,"type":"class","name":"opps-search","namespace":"","comb":"","styleLess":"width: auto; margin-bottom: 0px; padding: 8px 10px; border: 1px solid #e4e4df; border-radius: 8px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000004","fake":false,"type":"class","name":"opps-filter-status","namespace":"","comb":"","styleLess":"width: auto; margin-bottom: 0px; padding: 8px 10px; border: 1px solid #e4e4df; border-radius: 8px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000006","fake":false,"type":"class","name":"opps-sort","namespace":"","comb":"","styleLess":"width: auto; margin-bottom: 0px; padding: 8px 10px; border: 1px solid #e4e4df; border-radius: 8px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000009","fake":false,"type":"class","name":"opps-clear","namespace":"","comb":"","styleLess":"padding: 8px 12px; border: 1px solid #434b43; border-radius: 8px; cursor: pointer;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000011","fake":false,"type":"class","name":"opps-controls-form","namespace":"","comb":"","styleLess":"display: flex; grid-column-gap: 8px; flex-wrap: wrap; align-items: center;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000013","fake":false,"type":"class","name":"opps-controls","namespace":"","comb":"","styleLess":"margin-bottom: 12px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000017","fake":false,"type":"class","name":"opps-count-from","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000021","fake":false,"type":"class","name":"opps-count-to","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000025","fake":false,"type":"class","name":"opps-total","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000027","fake":false,"type":"class","name":"opps-counts","namespace":"","comb":"","styleLess":"margin-bottom: 12px; font-size: 13px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000030","fake":false,"type":"class","name":"opps-tag-field","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000034","fake":false,"type":"class","name":"opps-tag-value","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000037","fake":false,"type":"class","name":"opps-tag-remove","namespace":"","comb":"","styleLess":"display: inline; margin-left: 4px; cursor: pointer;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000039","fake":false,"type":"class","name":"opps-tag","namespace":"","comb":"","styleLess":"display: inline-block; margin-right: 6px; padding: 2px 8px; border-radius: 4px; background-color: #ecece8; font-size: 12px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000041","fake":false,"type":"class","name":"opps-tags","namespace":"","comb":"","styleLess":"margin-bottom: 12px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000044","fake":false,"type":"class","name":"opps-card-brand","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000048","fake":false,"type":"class","name":"opps-card-type","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000052","fake":false,"type":"class","name":"opps-card-budget","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000056","fake":false,"type":"class","name":"opps-card-date","namespace":"","comb":"","styleLess":"display: inline;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000059","fake":false,"type":"class","name":"opps-card-title","namespace":"","comb":"","styleLess":"margin-top: 0px; margin-bottom: 4px; font-size: 18px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000062","fake":false,"type":"class","name":"opps-card-desc","namespace":"","comb":"","styleLess":"margin-bottom: 8px; color: #66705e;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000064","fake":false,"type":"class","name":"opps-card-meta","namespace":"","comb":"","styleLess":"font-size: 13px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000067","fake":false,"type":"class","name":"opps-card-badge","namespace":"","comb":"","styleLess":"display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 4px; background-color: #e3efe4; color: #3d7a44; font-size: 12px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000069","fake":false,"type":"class","name":"opps-card","namespace":"","comb":"","styleLess":"display: block; margin-bottom: 16px; padding: 20px; border: 1px solid #e4e4df; border-radius: 12px; background-color: #ffffff; color: #23281f; text-decoration: none;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000071","fake":false,"type":"class","name":"opps-list","namespace":"","comb":"","styleLess":"","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000074","fake":false,"type":"class","name":"opps-empty","namespace":"","comb":"","styleLess":"display: none; padding: 20px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000077","fake":false,"type":"class","name":"opps-loader","namespace":"","comb":"","styleLess":"padding: 20px; color: #8a917f;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000080","fake":false,"type":"class","name":"opps-error","namespace":"","comb":"","styleLess":"display: none; padding: 20px; color: #a13d34;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000083","fake":false,"type":"class","name":"opps-page-prev","namespace":"","comb":"","styleLess":"display: inline-block; margin-right: 6px; padding: 6px 10px; border: 1px solid #e4e4df; border-radius: 8px; cursor: pointer;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000086","fake":false,"type":"class","name":"opps-page-num","namespace":"","comb":"","styleLess":"display: inline-block; margin-right: 6px; padding: 6px 10px; border: 1px solid #e4e4df; border-radius: 8px; cursor: pointer;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000089","fake":false,"type":"class","name":"opps-page-next","namespace":"","comb":"","styleLess":"display: inline-block; margin-right: 6px; padding: 6px 10px; border: 1px solid #e4e4df; border-radius: 8px; cursor: pointer;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000091","fake":false,"type":"class","name":"opps-pagination","namespace":"","comb":"","styleLess":"margin-top: 16px;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000093","fake":false,"type":"class","name":"opps-wrapper","namespace":"","comb":"","styleLess":"position: relative;","variants":{},"children":[],"selector":null,"origin":null},{"_id":"f0e1d2c3-0000-4000-8000-000000000095","fake":false,"type":"class","name":"opps-section","namespace":"","comb":"","styleLess":"","variants":{},"children":[],"selector":null,"origin":null}],"assets":[],"ix1":[],"ix2":{"interactions":[],"events":[],"actionLists":[]}},"meta":{"unlinkedSymbolCount":0,"droppedLinks":0,"dynBindRemovedCount":0,"dynListBindRemovedCount":0,"paginationRemovedCount":0}}
+    </script>
+
+    <script>
+      ;(function () {
+        var FIELDS = [
+          { id: 'set-xano-base', token: 'XANO_BASE' },
+          { id: 'set-api-group', token: 'API_GROUP' },
+          { id: 'set-auth-group', token: 'AUTH_GROUP' },
+        ]
+        var LS_KEY = 'wf-xano-prompt-library'
+
+        function loadSettings() {
+          try { return JSON.parse(localStorage.getItem(LS_KEY)) || {} } catch (e) { return {} }
+        }
+        function saveSettings(s) {
+          try { localStorage.setItem(LS_KEY, JSON.stringify(s)) } catch (e) {}
+        }
+
+        var settings = loadSettings()
+        FIELDS.forEach(function (f) {
+          var el = document.getElementById(f.id)
+          if (!el) return
+          if (settings[f.token]) el.value = settings[f.token]
+          el.addEventListener('input', function () {
+            settings[f.token] = el.value.trim()
+            saveSettings(settings)
+          })
+        })
+
+        function substitute(text) {
+          FIELDS.forEach(function (f) {
+            var v = (settings[f.token] || '').trim()
+            if (v) text = text.split('{{' + f.token + '}}').join(v)
+          })
+          return text
+        }
+
+        // data-src may list several ids — sources are joined with a divider
+        // (used by the R1 mega-prompt so X1–X3 stay single-sourced).
+        function sourceText(ids) {
+          var parts = []
+          ids.split(',').forEach(function (id) {
+            var el = document.getElementById(id.trim())
+            if (el) parts.push(el.textContent.trim())
+          })
+          return parts.join('\n\n---\n\n')
+        }
+
+        function flash(btn, ok) {
+          if (btn.__wfxTimer) clearTimeout(btn.__wfxTimer)
+          if (!btn.__wfxLabel) btn.__wfxLabel = btn.innerHTML
+          btn.textContent = ok ? 'Copied ✓' : 'Copy failed'
+          btn.classList.add(ok ? 'is-copied' : 'is-failed')
+          btn.__wfxTimer = setTimeout(function () {
+            btn.innerHTML = btn.__wfxLabel
+            btn.classList.remove('is-copied')
+            btn.classList.remove('is-failed')
+          }, 1600)
+        }
+
+        function copyExec(text) {
+          var ta = document.createElement('textarea')
+          ta.value = text
+          ta.setAttribute('readonly', '')
+          ta.style.position = 'fixed'
+          ta.style.left = '-9999px'
+          document.body.appendChild(ta)
+          ta.select()
+          var ok = false
+          try { ok = document.execCommand('copy') } catch (e) {}
+          document.body.removeChild(ta)
+          return ok
+        }
+
+        function copyPlain(text, done) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(
+              function () { done(true) },
+              function () { done(copyExec(text)) }
+            )
+          } else {
+            done(copyExec(text))
+          }
+        }
+
+        // Webflow's Designer pastes from the clipboard's application/json
+        // slot. Only a copy-event handler run synchronously inside the click
+        // can fill that slot — navigator.clipboard.write() cannot set
+        // application/json, and plain text copies paste as nothing.
+        function copyWebflow(json) {
+          function onCopy(e) {
+            e.clipboardData.setData('application/json', json)
+            e.clipboardData.setData('text/plain', json)
+            e.preventDefault()
+          }
+          document.addEventListener('copy', onCopy)
+          var ok = false
+          try { ok = document.execCommand('copy') } catch (e) {}
+          document.removeEventListener('copy', onCopy)
+          return ok
+        }
+
+        document.addEventListener('click', function (ev) {
+          var t = ev.target
+          while (t && t !== document && !(t.tagName === 'BUTTON' && t.getAttribute('data-src'))) t = t.parentNode
+          if (!t || t === document) return
+          var btn = t
+          var text = substitute(sourceText(btn.getAttribute('data-src')))
+          if (btn.getAttribute('data-wf') === 'true') {
+            flash(btn, copyWebflow(text))
+          } else {
+            copyPlain(text, function (ok) { flash(btn, ok) })
+          }
+        })
+      })()
+    </script>
+  </body>
+</html>

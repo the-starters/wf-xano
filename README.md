@@ -51,10 +51,16 @@ Add to your page's custom code, **after** `memberstack-x` (only needed when usin
 
 Then add attributes in the Webflow Designer. That's it — the list renders on load.
 
+Setting up from scratch? The **[Prompt Library](https://the-starters.github.io/wf-xano/prompts/)**
+has copy-paste AI prompts and checklists for the Xano side (tables, paged endpoint, auth) and
+ready-made Webflow structures (Embed snippets, native paste-into-Designer components).
+
 - **[Attribute reference →](docs/attributes.md)** every element and setting
 - **[API reference →](docs/api.md)** the `window.WfXano` object, events, hooks, auth
 - **[Examples →](examples/index.html)** self-contained demos with a mocked backend
   ([live](https://the-starters.github.io/wf-xano/examples/))
+- **[Prompt Library →](prompts/index.html)** AI prompts, checklists & Webflow components
+  ([live](https://the-starters.github.io/wf-xano/prompts/))
 
 ## Highlights
 
