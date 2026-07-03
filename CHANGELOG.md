@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.7.0 — 2026-07-03
+
+### Added — Prompt Library
+
+- **[Prompt Library](https://the-starters.github.io/wf-xano/prompts/)** (`prompts/index.html`) —
+  a copy-paste library for standing up both halves of a wf-xano list:
+  - **Xano backend** (X1–X3): AI prompts (for Xano's AI builder / ChatGPT / Claude) *and* manual
+    checklists for the tables, the paged list endpoint (the
+    `items / itemsTotal / curPage / pageTotal / nextPage` contract), and the Memberstack
+    trade-token auth endpoint with `$auth` member scoping.
+  - **Webflow markup** (W1–W3): attribute-complete HTML snippets for Embed elements, AI prompts
+    for building native Designer elements, and **experimental "Copy for Webflow" buttons** that
+    put native elements (with classes and `wf-xano-*` attributes) on the clipboard as
+    `@webflow/XscpData` for direct pasting into the Designer.
+  - **Recipes** (R1–R2): member-scoped job board end-to-end (with a combined Xano mega-prompt)
+    and a public read-only variant.
+  - A "Your project" bar substitutes your Xano base URL / API group / auth group into everything
+    you copy (stored in localStorage; unfilled fields copy through as `{{TOKEN}}` placeholders).
+- `prompts/inspector.html` — maintainer tool that dumps the Designer's `application/json`
+  clipboard payload, for re-capturing the Copy-for-Webflow structures from a real project.
+- Test suite for the library's assets (`test/prompt-library.test.mjs`): XscpData payload validity
+  (envelope, id/reference integrity, required `wf-xano-*` xattrs), snippet grammar, button wiring,
+  token whitelist, and copy behavior.
+
 ## v0.6.1 — 2026-07-03
 
 ### Added
