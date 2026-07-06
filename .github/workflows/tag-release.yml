@@ -1,0 +1,48 @@
+# Creates a release tag on main — the repo's releases are git tags served
+# via jsDelivr (see README "Versioning"), so tagging IS the release.
+#
+# Run it from the Actions tab (workflow_dispatch): pass the tag (e.g.
+# v0.7.0). It refuses to move an existing tag and checks the tag matches
+# package.json's version so a typo can't publish a mismatched CDN URL.
+name: Tag release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create (e.g. v0.7.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Validate tag against package.json
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ inputs.tag }}" != "v$PKG_VERSION" ]; then
+            echo "::error::Tag '${{ inputs.tag }}' does not match package.json version 'v$PKG_VERSION'"
+            exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/${{ inputs.tag }}" | grep -q .; then
+            echo "::error::Tag '${{ inputs.tag }}' already exists — tags are immutable releases"
+            exit 1
+          fi
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.tag }}" -m "${{ inputs.tag }}"
+          git push origin "refs/tags/${{ inputs.tag }}"
+      - name: Purge jsDelivr floating aliases
+        run: |
+          MINOR=$(echo "${{ inputs.tag }}" | sed 's/^v//; s/\.[0-9]*$//')
+          for ref in latest "$MINOR"; do
+            curl -fsS "https://purge.jsdelivr.net/gh/${{ github.repository }}@${ref}/wf-xano.min.js" || true
+          done
