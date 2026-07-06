@@ -37,6 +37,7 @@ const FULL_MARKUP = `<!doctype html><html><body>
       <h3 wf-xano-bind="title"></h3>
       <p wf-xano-bind="description"></p>
       <time wf-xano-bind="published_at" wf-xano-format="date"></time>
+      <span class="owner" wf-xano-bind="owner" wf-xano-format="short-name"></span>
       <span class="pill-active" wf-xano-if="status === 'Active'">Live</span>
       <span class="pill-closed" wf-xano-if="status === 'Closed'">Closed</span>
     </a>
@@ -47,8 +48,8 @@ const FULL_MARKUP = `<!doctype html><html><body>
 
 const FULL_PAGE1 = {
   items: [
-    { id: 345, title: 'Senior Brand Designer', description: 'Lead brand', published_at: '2026-06-30T00:00:00Z', status: 'Active' },
-    { id: 346, title: 'Closed Role', description: 'old', published_at: '2026-06-01T00:00:00Z', status: 'Closed' },
+    { id: 345, title: 'Senior Brand Designer', description: 'Lead brand', published_at: '2026-06-30T00:00:00Z', status: 'Active', owner: 'John Paul Dionisio' },
+    { id: 346, title: 'Closed Role', description: 'old', published_at: '2026-06-01T00:00:00Z', status: 'Closed', owner: 'Cher' },
   ],
   itemsTotal: 25, curPage: 1, pageTotal: 2,
 }
@@ -77,6 +78,8 @@ const FULL_PAGE1 = {
   const c0 = cards[0]
   assert.equal(c0.querySelector('[wf-xano-bind="title"]').textContent, 'Senior Brand Designer')
   assert.notEqual(c0.querySelector('[wf-xano-bind="published_at"]').textContent, '', 'date formatted non-empty')
+  assert.equal(c0.querySelector('.owner').textContent, 'John P. D.', 'short-name abbreviates after first word')
+  assert.equal(cards[1].querySelector('.owner').textContent, 'Cher', 'short-name leaves single word intact')
   assert.equal(c0.getAttribute('href'), '/opportunities-details---brand-view?opp=345', 'root-anchor link href set')
   assert.notEqual(c0.querySelector('.pill-active').style.display, 'none', 'active pill visible for Active')
   assert.equal(c0.querySelector('.pill-closed').style.display, 'none', 'closed pill hidden for Active')
