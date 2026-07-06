@@ -101,7 +101,7 @@ Add these to the elements above to tune behavior.
 
 | Attribute | Applies to | Description |
 | --- | --- | --- |
-| `wf-xano-format` | `wf-xano-bind` elements | `date` or `datetime` — formats timestamps with the user's locale. |
+| `wf-xano-format` | `wf-xano-bind` elements | `date` / `datetime` — formats timestamps with the user's locale. `short-name` (v0.7.1+) — abbreviates every word after the first (`John Paul Dionisio` → `John P. D.`); shared vocabulary with the wf-algolia fork and quiz-results.js. |
 | `wf-xano-display` | `wf-xano-if` elements and the `empty`/`loader`/`error` state elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
 | `wf-xano-link-prefix` / `wf-xano-link-suffix` | `wf-xano-link` elements | Wrap the field value: `prefix + value + suffix`. |
 | `wf-xano-value` | checkbox/radio filters | The real filter value — Webflow checkboxes all submit `"on"`. |

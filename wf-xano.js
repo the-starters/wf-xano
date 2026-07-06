@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.7.0'
+  var VERSION = '0.7.1'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -167,7 +167,7 @@
     }
   }
 
-  /** Optional value formatting via wf-xano-format ("date" | "datetime" | else raw). */
+  /** Optional value formatting via wf-xano-format ("date" | "datetime" | "short-name" | else raw). */
   function fmt(value, kind) {
     if (value == null || value === '') return ''
     if (kind === 'date' || kind === 'datetime') {
@@ -175,6 +175,17 @@
       var d = new Date(ms)
       if (isNaN(d.getTime())) return String(value)
       return kind === 'datetime' ? d.toLocaleString() : d.toLocaleDateString()
+    }
+    if (kind === 'short-name') {
+      var parts = String(value).trim().split(/\s+/).filter(Boolean)
+      if (!parts.length) return ''
+      return [parts[0]]
+        .concat(
+          parts.slice(1).map(function (word) {
+            return word.charAt(0).toUpperCase() + '.'
+          }),
+        )
+        .join(' ')
     }
     return String(value)
   }

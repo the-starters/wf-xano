@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.1 — 2026-07-06
+
+### Added
+
+- **`wf-xano-format="short-name"`** — abbreviates every word after the first:
+  `John Paul Dionisio` → `John P. D.`. Part of the shared format vocabulary with
+  the wf-algolia fork and quiz-results.js (v1.3.29), so the same value works on
+  every renderer.
+
 ## v0.7.0 — 2026-07-03
 
 ### Added — Prompt Library
