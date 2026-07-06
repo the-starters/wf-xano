@@ -5,7 +5,7 @@
 
 Built for **state-heavy**, authoritative, member-scoped lists: a brand's own posts, applicant
 tables, dashboards, admin/back-office queues. The complement to search libraries like
-[wf-algolia](https://www.npmjs.com/package/@candid-leap/wf-algolia), which stay the right tool for
+[wf-algolia](https://github.com/the-starters/wf-algolia), which stay the right tool for
 **search-heavy** public browse.
 
 ```html
@@ -38,6 +38,20 @@ container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 
 They're complementary: reach for wf-xano when correctness, freshness, and member-scoping matter.
 
+## See it live
+
+- **[Examples](https://the-starters.github.io/wf-xano/examples/)** — self-contained demos with a
+  mocked backend (no Xano account needed).
+- **[Prompt Library](https://the-starters.github.io/wf-xano/prompts/)** — AI prompts, checklists
+  & paste-ready Webflow components.
+- **In production** — the brand opportunities feed on The Starters' Opportunities 3.0 platform
+  ([`/opportunities-brands-view`](https://the-starters-3-0.webflow.io/opportunities-brands-view) —
+  auth-scoped list over `brand/opportunities/list` with filters, pagination and status pills;
+  behind a site password until 3.0 launches on
+  [hirethestarters.com](https://www.hirethestarters.com)). The same page runs
+  [wf-algolia](https://github.com/the-starters/wf-algolia) for its navbar search — the two
+  libraries coexisting as designed.
+
 ## Getting started
 
 Add to your page's custom code, **after** `memberstack-x` (only needed when using auth):
@@ -46,7 +60,7 @@ Add to your page's custom code, **after** `memberstack-x` (only needed when usin
 <script>
   window.WfXanoConfig = { xanoBase: 'https://YOUR-ID.xano.io' }
 </script>
-<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.4/wf-xano.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.7/wf-xano.min.js"></script>
 ```
 
 Then add attributes in the Webflow Designer. That's it — the list renders on load.
@@ -68,7 +82,7 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Race-safe** — overlapping requests are sequenced; a stale response never renders over a newer one.
 - **Auth built in** — Memberstack JWT → Xano trade-token, cached and auto-reset when the logged-in
   member changes (no cross-account leaks).
-- **Full list UI from attributes** — binds (dot paths, date formatting), conditionals, links,
+- **Full list UI from attributes** — binds (dot paths, date + name formatting), conditionals, links,
   empty/loader/error states, totals + visible ranges, numbered pagination, filters (incl. checkbox
   groups), debounced search, sort.
 - **Designer-friendly** — instance keys let counts and controls live anywhere on the page; state
@@ -101,8 +115,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.4.0/wf-xano.min.js` | pinned — deterministic, recommended for production |
-| `…/gh/the-starters/wf-xano@0.4/wf-xano.min.js` | latest patch of 0.4 |
+| `…/gh/the-starters/wf-xano@0.7.1/wf-xano.min.js` | pinned — deterministic, recommended for production |
+| `…/gh/the-starters/wf-xano@0.7/wf-xano.min.js` | latest patch of 0.7 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.
@@ -118,9 +132,9 @@ pattern *and the attribute-naming system* from the established Webflow libraries
    [`list` package constants](https://github.com/finsweet/attributes/blob/master/packages/list/src/utils/constants.ts)
    are the richest catalog of list features worth porting (load-more/infinite modes, page
    siblings/boundary/dots, scroll anchors, filter tags, condition groups…).
-2. **[wf-algolia](https://www.npmjs.com/package/@candid-leap/wf-algolia)** — the grammar wf-xano
-   already mirrors. Keep feature parity where it makes sense, so migrating a feed between the two
-   stays a mechanical attribute rename (see the
+2. **[wf-algolia](https://github.com/the-starters/wf-algolia)** — the grammar wf-xano
+   already mirrors (The Starters' fork of `@candid-leap/wf-algolia`). Keep feature parity where it
+   makes sense, so migrating a feed between the two stays a mechanical attribute rename (see the
    [brand-view example](https://the-starters.github.io/wf-xano/examples/opportunities-brand-view.html)).
 
 Matching known conventions keeps the learning curve at zero and migrations table-driven; a third
