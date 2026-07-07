@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.8.0 — 2026-07-06
+
+### Added — boundary + ellipsis pagination
+
+- **`wf-xano-element="page-dots"`** — optional ellipsis template, cloned into the gaps between
+  the pinned boundary pages and the current-page window (`1 2 … 7 8 9 … 24 25`). Clones get
+  `wf-xano-page-dot`. Absent template = gaps are skipped (unchanged behavior for existing markup).
+- **`wf-xano-page-boundary`** (default `1`) — pages pinned at each edge; pairs with the existing
+  `wf-xano-page-window` (Finsweet boundary/siblings/dots model).
+- Numbered pagination is now a pure `paginationModel(current, total, window, boundary)` helper
+  (exposed on `_internal` for testing).
+
+**Note:** the true last page is only known when the endpoint returns `itemsTotal`/`pageTotal`.
+Xano paged lists that only emit `nextPage` limit the display to `current … next`.
+
 ## v0.7.1 — 2026-07-06
 
 ### Added

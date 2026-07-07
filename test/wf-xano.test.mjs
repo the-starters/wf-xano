@@ -721,4 +721,75 @@ const FULL_PAGE1 = {
   console.log('PASS 18: URL restore hydrates radios (incl. "*" All) + click-filter active state')
 }
 
+// ---------- Test 19: paginationModel — boundary + window + dots gaps ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const PM = w.WfXano._internal.paginationModel
+  // 12 pages, on page 1, window 5, boundary 1 -> 1 2 3 4 5 … 12
+  assert.deepEqual(PM(1, 12, 5, 1), [1, 2, 3, 4, 5, 'dots', 12], 'page 1 of 12: leading window + end boundary')
+  // middle page -> dots on both sides
+  assert.deepEqual(PM(6, 12, 5, 1), [1, 'dots', 4, 5, 6, 7, 8, 'dots', 12], 'page 6: dots both sides')
+  // last page
+  assert.deepEqual(PM(12, 12, 5, 1), [1, 'dots', 8, 9, 10, 11, 12], 'page 12: leading boundary + trailing window')
+  // boundary 2 -> user example shape 1 2 … 11 12 (window 1)
+  assert.deepEqual(PM(1, 12, 1, 2), [1, 2, 'dots', 11, 12], 'boundary 2, window 1: 1 2 … 11 12')
+  // no gap -> no dots (few pages)
+  assert.deepEqual(PM(1, 3, 5, 1), [1, 2, 3], '3 pages: no dots')
+  // adjacent boundaries collapse the gap (no lone dot for a single skipped page is still a dot)
+  assert.deepEqual(PM(1, 6, 3, 1), [1, 2, 3, 'dots', 6], '6 pages window 3: single ellipsis')
+  console.log('PASS 19: paginationModel (boundary + window + dots)')
+}
+
+// ---------- Test 20: renders numbered buttons + ellipsis clones from page-dots template ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10" wf-xano-page-window="5">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <div class="pager">
+        <a wf-xano-element="page-prev">prev</a>
+        <a wf-xano-element="page-number">1</a>
+        <span wf-xano-element="page-dots">…</span>
+        <a wf-xano-element="page-next">next</a>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  // 120 items / 10 per page = 12 pages, itemsTotal provided
+  w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], itemsTotal: 120, curPage: 1, pageTotal: 12 })
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-page-num]').length > 0), 'page buttons rendered')
+  const nums = [...w.document.querySelectorAll('[wf-xano-page-num]')].map((b) => b.textContent)
+  const dots = w.document.querySelectorAll('[wf-xano-page-dot]').length
+  assert.deepEqual(nums, ['1', '2', '3', '4', '5', '12'], 'page 1 of 12 shows window + last boundary')
+  assert.equal(dots, 1, 'one ellipsis clone between 5 and 12')
+  assert.equal(w.document.querySelector('[wf-xano-element="page-dots"]').style.display, 'none', 'dots template stays hidden')
+  // navigate to page 6 -> dots on both sides
+  const inst = w.document.querySelector('[wf-xano-element="wrapper"]').__wfXano
+  w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], itemsTotal: 120, curPage: 6, pageTotal: 12 })
+  await inst.goToPage(6)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-page-dot]').length === 2)
+  assert.equal(w.document.querySelectorAll('[wf-xano-page-dot]').length, 2, 'middle page: two ellipses')
+  console.log('PASS 20: numbered + ellipsis pagination render')
+}
+
+// ---------- Test 21: no page-dots template -> gaps silently omitted (back-compat) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <div class="pager"><a wf-xano-element="page-number">1</a></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], itemsTotal: 120, curPage: 1, pageTotal: 12 })
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-page-num]').length === 6), 'buttons render without dots template')
+  assert.equal(w.document.querySelectorAll('[wf-xano-page-dot]').length, 0, 'no ellipsis clones when template absent')
+  console.log('PASS 21: pagination without page-dots template (back-compat)')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

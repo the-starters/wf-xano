@@ -55,6 +55,9 @@ These work on any descendant of the template **and on the template root itself**
 | --- | --- |
 | `wf-xano-element="page-prev"` / `="page-next"` | Prev/next controls. Get `is-disabled` at the range edges. |
 | `wf-xano-element="page-number"` | Template button, cloned per visible page. Clones get `wf-xano-page-num`; the current page gets `is-active` and `aria-current="page"`. |
+| `wf-xano-element="page-dots"` | Optional ellipsis template, cloned into gaps between the boundary pages and the current-page window (e.g. `1 2 … 7 8 9 … 24 25`). Clones get `wf-xano-page-dot`. Omit it and gaps are simply skipped (no ellipsis). |
+
+Numbered buttons follow Finsweet's boundary + window model: `wf-xano-page-boundary` pages are pinned at each edge and a `wf-xano-page-window` of pages centers on the current page. **Requires the endpoint to return `itemsTotal`** (or `pageTotal`) so the true last page is known — otherwise wf-xano only knows there's a *next* page and shows `current … next`.
 
 ### Filters, search, sort
 
@@ -92,7 +95,8 @@ Add these to the elements above to tune behavior.
 | `wf-xano-method` | `POST`, `GET`, `PATCH`… | `POST` | HTTP method. `GET` sends params as a query string. |
 | `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints. |
 | `wf-xano-per-page` | number | `20` | Page size, sent as `per_page`. |
-| `wf-xano-page-window` | number | `5` | Max numbered page buttons rendered. |
+| `wf-xano-page-window` | number | `5` | Numbered page buttons centered on the current page. |
+| `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
 | `wf-xano-debounce` | ms | `300` | Debounce for search inputs (can be overridden per input). |
 | `wf-xano-url-sync` | `true` | — | Write page + params to the query string (`<key>_page`, `<key>_<param>`) and restore them on load. |
 | `wf-xano-param-<name>` | any value | — | Static request param, e.g. `wf-xano-param-status="Active"`. |

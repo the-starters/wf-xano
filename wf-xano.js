@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.7.1'
+  var VERSION = '0.8.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -87,7 +87,7 @@
   try {
     var foucStyle = document.createElement('style')
     foucStyle.textContent =
-      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"]{display:none!important}'
+      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"],[wf-xano-element="page-dots"]{display:none!important}'
     ;(document.head || document.documentElement).appendChild(foucStyle)
   } catch (e) {
     /* non-fatal */
@@ -114,6 +114,38 @@
    *  valueless custom attributes) and the legacy `wf-xano-<name>` marker. */
   function elSel(name) {
     return '[wf-xano-element="' + name + '"], [wf-xano-' + name + ']'
+  }
+
+  /** Which page numbers (and where the ellipsis gaps fall) to render:
+   *  `boundary` pages pinned at each edge + a `window` of pages centered on
+   *  the current page, de-duped and sorted; a `'dots'` marker is inserted
+   *  wherever consecutive shown pages skip a number. Finsweet's
+   *  boundary/siblings/dots model. Returns a mixed array of numbers + 'dots'. */
+  function paginationModel(current, total, windowSize, boundary) {
+    var shown = {}
+    var add = function (n) {
+      if (n >= 1 && n <= total) shown[n] = true
+    }
+    for (var b = 1; b <= boundary; b++) {
+      add(b)
+      add(total - b + 1)
+    }
+    var half = Math.floor(windowSize / 2)
+    var start = Math.max(1, current - half)
+    var end = Math.min(total, start + windowSize - 1)
+    start = Math.max(1, end - windowSize + 1)
+    for (var w = start; w <= end; w++) add(w)
+    var sorted = Object.keys(shown)
+      .map(Number)
+      .sort(function (a, b2) {
+        return a - b2
+      })
+    var out = []
+    for (var i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('dots')
+      out.push(sorted[i])
+    }
+    return out
   }
 
   /** Remove a structural role marker (both grammars) from a cloned node. */
@@ -428,6 +460,10 @@
     this.auth = root.getAttribute('wf-xano-auth') !== 'none'
     this.perPage = parseInt(root.getAttribute('wf-xano-per-page') || '20', 10)
     this.pageWindow = parseInt(root.getAttribute('wf-xano-page-window') || '5', 10)
+    // Boundary pages always shown at each edge (Finsweet page-boundary). With
+    // a wf-xano-element="page-dots" template present, gaps between the window
+    // and the boundaries render as ellipses -> e.g. 1 2 … 7 8 9 … 24 25.
+    this.pageBoundary = parseInt(root.getAttribute('wf-xano-page-boundary') || '1', 10)
     this.debounce = parseInt(root.getAttribute('wf-xano-debounce') || '300', 10)
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.page = 1
@@ -932,33 +968,41 @@
     var tmpl = this.q(elSel('page-number'))
     if (!tmpl) return
     var parent = tmpl.parentNode
-    // Clear old page buttons (keep hidden template).
-    qa(parent, '[wf-xano-page-num]').forEach(function (b) {
+    var dotsTmpl = this.q(elSel('page-dots'))
+    // Clear old clones (numbered buttons + ellipses); keep hidden templates.
+    qa(parent, '[wf-xano-page-num], [wf-xano-page-dot]').forEach(function (b) {
       b.remove()
     })
     tmpl.style.display = 'none'
-    var half = Math.floor(this.pageWindow / 2)
-    var start = Math.max(1, result.page - half)
-    var end = Math.min(result.pages, start + this.pageWindow - 1)
-    start = Math.max(1, end - this.pageWindow + 1)
-    for (var p = start; p <= end; p++) {
-      ;(function (page) {
-        var btn = tmpl.cloneNode(true)
-        clearRole(btn, 'page-number')
-        btn.setAttribute('wf-xano-page-num', '')
-        btn.style.display = ''
-        btn.textContent = String(page)
-        var active = page === result.page
-        btn.classList.toggle('is-active', active)
-        if (active) btn.setAttribute('aria-current', 'page')
-        else btn.removeAttribute('aria-current')
-        btn.addEventListener('click', function (e) {
-          e.preventDefault()
-          self.goToPage(page)
-        })
-        parent.appendChild(btn)
-      })(p)
-    }
+    if (dotsTmpl) dotsTmpl.style.display = 'none'
+
+    paginationModel(result.page, result.pages, this.pageWindow, this.pageBoundary).forEach(function (entry) {
+      if (entry === 'dots') {
+        // No page-dots template -> silently omit the ellipsis (still valid).
+        if (!dotsTmpl) return
+        var dot = dotsTmpl.cloneNode(true)
+        clearRole(dot, 'page-dots')
+        dot.setAttribute('wf-xano-page-dot', '')
+        dot.style.display = ''
+        dot.removeAttribute('aria-current')
+        parent.appendChild(dot)
+        return
+      }
+      var btn = tmpl.cloneNode(true)
+      clearRole(btn, 'page-number')
+      btn.setAttribute('wf-xano-page-num', '')
+      btn.style.display = ''
+      btn.textContent = String(entry)
+      var active = entry === result.page
+      btn.classList.toggle('is-active', active)
+      if (active) btn.setAttribute('aria-current', 'page')
+      else btn.removeAttribute('aria-current')
+      btn.addEventListener('click', function (e) {
+        e.preventDefault()
+        self.goToPage(entry)
+      })
+      parent.appendChild(btn)
+    })
   }
 
   /* ============================ EVENTS ================================ */
@@ -1090,6 +1134,7 @@
       fmt: fmt,
       normalize: normalize,
       readFilterValue: readFilterValue,
+      paginationModel: paginationModel,
     },
   }
 
