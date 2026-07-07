@@ -792,4 +792,71 @@ const FULL_PAGE1 = {
   console.log('PASS 21: pagination without page-dots template (back-compat)')
 }
 
+// ---------- Test 22: load="more" — appends next page on click, off nextPage only ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="2" wf-xano-load="more">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <a wf-xano-element="load-more">Load more</a>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  let call = 0
+  // no itemsTotal/pageTotal — only nextPage, like the real Xano endpoint
+  w.fetch = () => { call++; return makeRes({ items: [{ id: call*10+1, title: 'p'+call+'a' }, { id: call*10+2, title: 'p'+call+'b' }], itemsReceived: 2, curPage: call, nextPage: call < 3 ? call+1 : null }) }
+  w.eval(LIB)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2)
+  const loadMore = w.document.querySelector('[wf-xano-element="load-more"]')
+  assert.notEqual(loadMore.style.display, 'none', 'load-more visible while more pages remain')
+  loadMore.click()
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 4)
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 4, 'second page appended (not replaced)')
+  loadMore.click()
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 6)
+  assert.equal(loadMore.style.display, 'none', 'load-more hidden when nextPage is null')
+  assert.ok(w.document.querySelector('[wf-xano-element="wrapper"]').classList.contains('is-wf-xano-exhausted'), 'exhausted class set')
+  console.log('PASS 22: load="more" appends + exhausts off nextPage')
+}
+
+// ---------- Test 23: load="all" — pulls every page up front ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="2" wf-xano-load="all">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  let call = 0
+  w.fetch = () => { call++; return makeRes({ items: [{ id: call*10+1, title: 'x' }, { id: call*10+2, title: 'y' }], curPage: call, nextPage: call < 3 ? call+1 : null }) }
+  w.eval(LIB)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 6, 3000)
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 6, 'all 3 pages loaded and accumulated')
+  console.log('PASS 23: load="all" fetches every page')
+}
+
+// ---------- Test 24: filter change in append mode resets (replaces, back to page 1) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="l" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="2" wf-xano-load="more">
+      <select wf-xano-filter="cat"><option value="">all</option><option value="x">x</option></select>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <a wf-xano-element="load-more">more</a>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  w.fetch = (url, opts) => { const b = JSON.parse(opts.body); bodies.push(b); return makeRes({ items: [{ id: 1, title: 'a' }, { id: 2, title: 'b' }], curPage: b.page, nextPage: b.page < 3 ? b.page+1 : null }) }
+  w.eval(LIB)
+  await waitFor(() => bodies.length === 1)
+  w.document.querySelector('[wf-xano-element="load-more"]').click()
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 4)
+  const sel = w.document.querySelector('select[wf-xano-filter]')
+  sel.value = 'x'; sel.dispatchEvent(new w.Event('change', { bubbles: true }))
+  await waitFor(() => bodies[bodies.length-1].cat === 'x')
+  assert.equal(bodies[bodies.length-1].page, 1, 'filter change resets to page 1')
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2)
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 2, 'filter change replaced (did not append)')
+  console.log('PASS 24: append-mode filter change resets + replaces')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

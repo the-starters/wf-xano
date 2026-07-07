@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.8.0'
+  var VERSION = '0.9.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -364,9 +364,12 @@
   }
 
   /* ============================ RESPONSE SHAPE ======================== */
-  // Xano paged list -> { items, total, page, pages }. Also tolerates a raw array.
+  // Xano paged list -> { items, total, page, pages, hasMore }. Also tolerates
+  // a raw array. `hasMore` is authoritative for load-more/infinite modes even
+  // when the endpoint omits a total (Xano emits only nextPage) — numbered
+  // pagination still needs itemsTotal/pageTotal to know the true last page.
   function normalize(data, perPage) {
-    if (Array.isArray(data)) return { items: data, total: data.length, page: 1, pages: 1 }
+    if (Array.isArray(data)) return { items: data, total: data.length, page: 1, pages: 1, hasMore: false }
     if (data && Array.isArray(data.items)) {
       var total = data.itemsTotal != null ? data.itemsTotal : data.items.length
       var page = data.curPage || 1
@@ -375,10 +378,11 @@
       // metadata — derive from total/perPage, or at least trust nextPage.
       if (!pages) pages = perPage ? Math.max(1, Math.ceil(total / perPage)) : 1
       if (data.nextPage && pages <= page) pages = page + 1
-      return { items: data.items, total: total, page: page, pages: pages }
+      var hasMore = data.nextPage != null ? true : page < pages
+      return { items: data.items, total: total, page: page, pages: pages, hasMore: hasMore }
     }
     // Single object or unknown shape: render as one row.
-    return { items: data ? [data] : [], total: data ? 1 : 0, page: 1, pages: 1 }
+    return { items: data ? [data] : [], total: data ? 1 : 0, page: 1, pages: 1, hasMore: false }
   }
 
   /* ============================ CARD RENDER =========================== */
@@ -464,6 +468,14 @@
     // a wf-xano-element="page-dots" template present, gaps between the window
     // and the boundaries render as ellipses -> e.g. 1 2 … 7 8 9 … 24 25.
     this.pageBoundary = parseInt(root.getAttribute('wf-xano-page-boundary') || '1', 10)
+    // How pages are consumed (Finsweet's `load` setting): 'pagination' =
+    // numbered buttons (needs a true total); 'more' = append on load-more
+    // click; 'infinite' = append on scroll; 'all' = fetch every page up front.
+    // The append modes need only nextPage, so they work when the endpoint
+    // omits a total count.
+    this.loadMode = (root.getAttribute('wf-xano-load') || 'pagination').toLowerCase()
+    this.appendMode = this.loadMode === 'more' || this.loadMode === 'infinite' || this.loadMode === 'all'
+    this.threshold = parseInt(root.getAttribute('wf-xano-threshold') || '0', 10)
     this.debounce = parseInt(root.getAttribute('wf-xano-debounce') || '300', 10)
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.page = 1
@@ -729,8 +741,53 @@
         signal,
       )
     })
+    // Load-more (Finsweet `load="more"`): click appends the next page. Also
+    // the scroll sentinel for `infinite`. Works off nextPage alone.
+    this.qa(elSel('load-more')).forEach(function (el) {
+      el.addEventListener(
+        'click',
+        function (e) {
+          e.preventDefault()
+          self.loadNext()
+        },
+        signal,
+      )
+    })
+    if (this.loadMode === 'infinite') this.bindInfinite()
 
     if (this.urlSync) this.hydrateControls()
+  }
+
+  /** IntersectionObserver on the load-more element (or the list tail) that
+   *  appends the next page as it scrolls into view. Falls back to a scroll
+   *  listener where IntersectionObserver is unavailable. */
+  Instance.prototype.bindInfinite = function () {
+    var self = this
+    var sentinel = this.q(elSel('load-more')) || this.listEl || this.template.parentNode
+    if (!sentinel) return
+    if (typeof IntersectionObserver === 'function') {
+      this._io = new IntersectionObserver(
+        function (entries) {
+          if (entries.some(function (en) { return en.isIntersecting })) self.loadNext()
+        },
+        { rootMargin: (this.threshold || 0) + 'px' },
+      )
+      this._io.observe(sentinel)
+    } else {
+      var onScroll = function () {
+        var r = sentinel.getBoundingClientRect()
+        if (r.top - (self.threshold || 0) <= window.innerHeight) self.loadNext()
+      }
+      window.addEventListener('scroll', onScroll, this._ac ? { signal: this._ac.signal } : false)
+    }
+  }
+
+  /** Append the next page (load-more / infinite). No-op while a load is in
+   *  flight or when the last response reported no further pages. */
+  Instance.prototype.loadNext = function () {
+    if (this._loading || (this._lastResult && !this._lastResult.hasMore)) return
+    this.page += 1
+    return this.load({ append: true })
   }
 
   /** Set/clear a request param, reset to page 1, reload. */
@@ -866,10 +923,12 @@
     // is-wf-xano-empty is decided in render()
   }
 
-  Instance.prototype.load = async function () {
+  Instance.prototype.load = async function (opts) {
     if (!this.ok) return
+    var append = !!(opts && opts.append)
     var self = this
     var seq = ++this._seq
+    this._loading = true
     this.setState('loading')
     try {
       var headers = { 'Content-Type': 'application/json' }
@@ -906,30 +965,38 @@
         if (seq !== this._seq) return
         if (Array.isArray(out)) result.items = out
       }
-      this.render(result)
+      this.render(result, append)
       this.setState('idle')
+      this._loading = false
       this._lastResult = result
-      if (this.urlSync) this.syncUrl()
+      if (this.urlSync && !append) this.syncUrl()
       this.emit('results', result)
+      // `all` mode: keep pulling pages until the source is exhausted.
+      if (this.loadMode === 'all' && result.hasMore) this.loadNext()
     } catch (err) {
       if (seq !== this._seq) return
+      this._loading = false
       console.error('[wf-xano] load failed', this.source, err)
       this.setState('error')
-      this.render({ items: [], total: 0, page: 1, pages: 1 })
+      this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
       this.emit('error', err)
     }
   }
 
-  Instance.prototype.render = function (result) {
+  Instance.prototype.render = function (result, append) {
     this._pages = result.pages
     var list = this.listEl || this.template.parentNode
-    // Remove previously injected clones (keep the hidden template).
-    qa(list, '[wf-xano-item]').forEach(function (c) {
-      c.remove()
-    })
-    // Empty state
-    showStateEl(this.emptyEl, !result.items.length)
-    this.root.classList.toggle('is-wf-xano-empty', !result.items.length)
+    // Replace mode clears prior clones; append mode (load-more/infinite/all)
+    // keeps them and adds the new page below.
+    if (!append) {
+      qa(list, '[wf-xano-item]').forEach(function (c) {
+        c.remove()
+      })
+    }
+    // Empty state reflects the accumulated list, not just this page.
+    var rendered = append ? qa(list, '[wf-xano-item]').length + result.items.length : result.items.length
+    showStateEl(this.emptyEl, !rendered)
+    this.root.classList.toggle('is-wf-xano-empty', !rendered)
     var self = this
     result.items.forEach(function (item) {
       var card = self.template.cloneNode(true)
@@ -940,9 +1007,17 @@
       fillCard(card, item)
       list.appendChild(card)
     })
-    // Counts: total + visible range ("Showing X–Y of Z").
-    var from = result.items.length ? (result.page - 1) * this.perPage + 1 : 0
-    var to = result.items.length ? from + result.items.length - 1 : 0
+    // Counts: total + visible range. In append modes the visible range runs
+    // from 1 to the accumulated count; in pagination mode it's this page.
+    var shownTotal = qa(list, '[wf-xano-item]').length
+    var from, to
+    if (this.appendMode) {
+      from = shownTotal ? 1 : 0
+      to = shownTotal
+    } else {
+      from = result.items.length ? (result.page - 1) * this.perPage + 1 : 0
+      to = result.items.length ? from + result.items.length - 1 : 0
+    }
     this.qa(elSel('total')).forEach(function (el) {
       el.textContent = String(result.total)
     })
@@ -952,8 +1027,20 @@
     this.qa(elSel('count-to')).forEach(function (el) {
       el.textContent = String(to)
     })
-    this.renderPagination(result)
+    if (this.appendMode) this.updateLoadMore(result)
+    else this.renderPagination(result)
     this.updateFilterUI()
+  }
+
+  /** Show/hide the load-more control by whether more pages remain, and mirror
+   *  the state onto the root (is-wf-xano-exhausted) for styling. */
+  Instance.prototype.updateLoadMore = function (result) {
+    var more = !!result.hasMore
+    this.qa(elSel('load-more')).forEach(function (el) {
+      showStateEl(el, more)
+      el.classList.toggle('is-disabled', !more)
+    })
+    this.root.classList.toggle('is-wf-xano-exhausted', !more)
   }
 
   Instance.prototype.renderPagination = function (result) {
@@ -1043,6 +1130,7 @@
   Instance.prototype.destroy = function () {
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()
+    if (this._io) this._io.disconnect()
     window.clearTimeout(this._searchTimer)
     if (this.template) {
       qa(this.listEl || this.template.parentNode, '[wf-xano-item]').forEach(function (c) {
