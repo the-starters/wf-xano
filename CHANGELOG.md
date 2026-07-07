@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.0 — 2026-07-06
+
+### Added — load modes (Finsweet `load`)
+
+- **`wf-xano-load="more|infinite|all|pagination"`** on the wrapper (default `pagination`,
+  unchanged). Append modes work off `nextPage` ALONE, so they need no total count from the
+  endpoint — the practical answer when Xano lists emit only `nextPage`:
+  - `more` — clicking `wf-xano-element="load-more"` appends the next page; the control hides
+    when exhausted (root gets `is-wf-xano-exhausted`).
+  - `infinite` — an IntersectionObserver on the load-more element (or list tail) appends as it
+    scrolls into view; `wf-xano-threshold` (px) tunes the trigger distance.
+  - `all` — fetches every page up front and accumulates.
+- Append modes reset (replace, page 1) on any filter/search/sort/clear change.
+- Count elements (`count-from`/`count-to`) report the accumulated range in append modes.
+
 ## v0.8.0 — 2026-07-06
 
 ### Added — boundary + ellipsis pagination

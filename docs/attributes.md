@@ -57,7 +57,20 @@ These work on any descendant of the template **and on the template root itself**
 | `wf-xano-element="page-number"` | Template button, cloned per visible page. Clones get `wf-xano-page-num`; the current page gets `is-active` and `aria-current="page"`. |
 | `wf-xano-element="page-dots"` | Optional ellipsis template, cloned into gaps between the boundary pages and the current-page window (e.g. `1 2 … 7 8 9 … 24 25`). Clones get `wf-xano-page-dot`. Omit it and gaps are simply skipped (no ellipsis). |
 
-Numbered buttons follow Finsweet's boundary + window model: `wf-xano-page-boundary` pages are pinned at each edge and a `wf-xano-page-window` of pages centers on the current page. **Requires the endpoint to return `itemsTotal`** (or `pageTotal`) so the true last page is known — otherwise wf-xano only knows there's a *next* page and shows `current … next`.
+Numbered buttons follow Finsweet's boundary + window model: `wf-xano-page-boundary` pages are pinned at each edge and a `wf-xano-page-window` of pages centers on the current page. **Numbered pagination requires the endpoint to return `itemsTotal`** (or `pageTotal`) so the true last page is known — otherwise wf-xano only knows there's a *next* page and shows `current … next`. If your endpoint emits only `nextPage` (Xano's default paged list), use a **load mode** below instead.
+
+### Load modes
+
+Set on the wrapper via `wf-xano-load` (Finsweet's `load` setting). Append modes only need `nextPage`, so they work when the endpoint returns no total count.
+
+| Value | Behavior |
+| --- | --- |
+| `pagination` *(default)* | Numbered page buttons (needs a true total; see above). |
+| `more` | `wf-xano-element="load-more"` appends the next page on click; the control hides when exhausted. |
+| `infinite` | Appends the next page as `load-more` (or the list tail) scrolls into view. `wf-xano-threshold` (px) tunes the trigger distance. |
+| `all` | Fetches every page up front and accumulates. |
+
+Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. The root gets `is-wf-xano-exhausted` when no more pages remain.
 
 ### Filters, search, sort
 
