@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.10.0'
+  var VERSION = '0.11.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -210,6 +210,12 @@
   }
   var DATE_KINDS = { date: 1, datetime: 1, 'date-medium': 1, 'date-long': 1, 'datetime-long': 1 }
 
+  /** A value that should render as nothing / trigger a wf-xano-fallback.
+   *  Includes the Unix epoch (0 / "0") since Xano stores unset timestamps as 0. */
+  function isBlank(v) {
+    return v == null || v === '' || v === 0 || v === '0'
+  }
+
   /** Optional value formatting via wf-xano-format. Date styles:
    *  `date` (locale short, e.g. 5/21/2026), `date-medium` / `date-long`
    *  ("May 21, 2026"), `datetime`, `datetime-long`. Also `short-name`, else
@@ -217,7 +223,7 @@
   function fmt(value, kind) {
     // Guard empties AND the Unix epoch (0 / "0") — Xano stores unset
     // timestamps as 0, which would otherwise render as "1/1/1970".
-    if (value == null || value === '' || value === 0 || value === '0') return ''
+    if (isBlank(value)) return ''
     if (kind && DATE_KINDS[kind]) {
       var ms = typeof value === 'number' && value < 1e12 ? value * 1000 : value
       var d = new Date(ms)
@@ -411,9 +417,20 @@
   // Every scan includes the card root (root-element lesson: the template
   // root is often the <a> or carries binds itself).
   function fillCard(card, item) {
-    // text / form-value binds (dot paths + optional wf-xano-format)
+    // text / form-value binds (dot paths + optional wf-xano-format). When the
+    // primary field is blank (null/''/0/"0" — same rule fmt uses), fall back
+    // through the comma-separated wf-xano-fallback fields in order, e.g.
+    // wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at".
     qaWithRoot(card, '[wf-xano-bind]').forEach(function (el) {
-      var value = fmt(get(item, el.getAttribute('wf-xano-bind')), el.getAttribute('wf-xano-format'))
+      var raw = get(item, el.getAttribute('wf-xano-bind'))
+      var fb = el.getAttribute('wf-xano-fallback')
+      if (fb && isBlank(raw)) {
+        var fields = fb.split(',')
+        for (var i = 0; i < fields.length && isBlank(raw); i++) {
+          raw = get(item, fields[i].trim())
+        }
+      }
+      var value = fmt(raw, el.getAttribute('wf-xano-format'))
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) el.value = value
       else el.textContent = value
     })
@@ -1245,6 +1262,7 @@
       normalize: normalize,
       readFilterValue: readFilterValue,
       paginationModel: paginationModel,
+      isBlank: isBlank,
     },
   }
 

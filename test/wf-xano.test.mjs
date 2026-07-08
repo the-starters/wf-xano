@@ -882,4 +882,33 @@ const FULL_PAGE1 = {
   console.log('PASS 25: date styles (long/medium) + epoch guard')
 }
 
+// ---------- Test 26: wf-xano-fallback — bind falls through to another field when blank ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none">
+      <div wf-xano-element="template">
+        <time wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at" wf-xano-format="date-long"></time>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const pub = Date.UTC(2026, 4, 21, 12), cre = Date.UTC(2026, 0, 3, 12)
+  w.fetch = () => makeRes(PAGE([
+    { id: 1, last_edited_at: Date.UTC(2026, 7, 9, 12), published_at: pub, created_at: cre }, // edited present
+    { id: 2, last_edited_at: 0, published_at: pub, created_at: cre },                          // edited unset -> published_at
+    { id: 3, last_edited_at: 0, published_at: null, created_at: cre },                         // -> created_at
+    { id: 4, last_edited_at: 0, published_at: 0, created_at: 0 },                              // all blank -> ""
+  ], 4))
+  w.eval(LIB)
+  await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 4)
+  const times = [...w.document.querySelectorAll('[wf-xano-item] time')].map((t) => t.textContent)
+  assert.equal(times[0], 'August 9, 2026', 'uses last_edited_at when present')
+  assert.equal(times[1], 'May 21, 2026', 'falls back to published_at when last_edited_at is 0')
+  assert.equal(times[2], 'January 3, 2026', 'falls through to created_at when published_at also blank')
+  assert.equal(times[3], '', 'all-blank -> empty')
+  assert.equal(w.WfXano._internal.isBlank(0), true, 'isBlank(0)')
+  assert.equal(w.WfXano._internal.isBlank(1782894318555), false, 'isBlank(real ts) false')
+  console.log('PASS 26: wf-xano-fallback chain')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

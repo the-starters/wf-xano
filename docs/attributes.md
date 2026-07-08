@@ -38,6 +38,7 @@ These work on any descendant of the template **and on the template root itself**
 | Attribute | Value | Description |
 | --- | --- | --- |
 | `wf-xano-bind` | field name | Sets the element's text (or `value` for inputs/selects/textareas). Supports dot paths for joined records: `brand.company_name`. |
+| `wf-xano-fallback` | field name(s) | On a `wf-xano-bind` element: when the bound field is blank (`null`/`""`/`0`/`"0"`), bind the first non-blank field from this comma-separated list instead. E.g. `wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at"` → shows the edit date, or the publish date, or the created date. |
 | `wf-xano-src` | field name | Sets an `<img>`'s `src`. |
 | `wf-xano-if` | expression | Shows/hides the element per item: `status === 'Active'`, `budget >= 100`, `applied` (truthy). Operators: `===` `!==` `>` `>=` `<` `<=`. |
 | `wf-xano-link` | field name | Builds the `href` from the field value. Works when the card root is the `<a>` itself. |
