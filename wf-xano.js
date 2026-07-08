@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.11.0'
+  var VERSION = '0.12.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -165,8 +165,26 @@
   }
 
   var IF_OPS = ['===', '!==', '>=', '<=', '>', '<']
-  /** Evaluate a `field === 'value'` style expression against a data row. */
+  /** Evaluate a `wf-xano-if` expression against a data row. Supports logical
+   *  combos: `|` = OR, `&` = AND (`&&`/`||` also accepted). AND binds tighter
+   *  than OR, so `a & b | c` = (a AND b) OR c. Each segment is a comparison
+   *  (`field === 'x'`, `>=` etc.) or a bare field name (truthy test). Values
+   *  containing `|`/`&` aren't supported (field names never do). */
   function evalIf(expr, data) {
+    // OR (lowest precedence) — split first so each segment can carry AND.
+    if (expr.indexOf('|') > -1) {
+      return expr.split('|').some(function (part) {
+        return part.trim() ? evalIf(part.trim(), data) : false
+      })
+    }
+    if (expr.indexOf('&') > -1) {
+      var segs = expr.split('&').filter(function (p) {
+        return p.trim()
+      })
+      return segs.every(function (part) {
+        return evalIf(part.trim(), data)
+      })
+    }
     var op = null
     for (var i = 0; i < IF_OPS.length; i++) {
       if (expr.indexOf(IF_OPS[i]) > -1) {
