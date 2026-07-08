@@ -911,4 +911,29 @@ const FULL_PAGE1 = {
   console.log('PASS 26: wf-xano-fallback chain')
 }
 
+// ---------- Test 27: wf-xano-if logical OR (|) / AND (&) ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const E = w.WfXano._internal.evalIf
+  // OR across bare fields — the user's "any date present" case
+  assert.equal(E('last_edited_at | created_at', { last_edited_at: 0, created_at: 173e10 }), true, 'OR: second field present')
+  assert.equal(E('last_edited_at | created_at', { last_edited_at: 0, created_at: 0 }), false, 'OR: neither present')
+  assert.equal(E('last_edited_at | created_at', { last_edited_at: 173e10, created_at: 0 }), true, 'OR: first present')
+  // double-pipe accepted
+  assert.equal(E('a || b', { a: 0, b: 1 }), true, '|| also works')
+  // AND
+  assert.equal(E("status === 'Active' & applied === false", { status: 'Active', applied: false }), true, 'AND both true')
+  assert.equal(E("status === 'Active' & applied === false", { status: 'Active', applied: true }), false, 'AND one false')
+  // precedence: (a AND b) OR c
+  assert.equal(E("status === 'Closed' & applied === false | featured", { status: 'Active', applied: false, featured: true }), true, 'AND binds tighter than OR — c rescues')
+  assert.equal(E("status === 'Active' & applied === false | featured", { status: 'Active', applied: false, featured: false }), true, 'AND branch true')
+  // single expression unchanged
+  assert.equal(E("status === 'Active'", { status: 'Active' }), true, 'single expr still works')
+  console.log('PASS 27: wf-xano-if OR/AND logical combinators')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

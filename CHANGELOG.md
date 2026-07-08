@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.0 — 2026-07-06
+
+### Added
+
+- **`wf-xano-if` logical combinators** — `|` = OR, `&` = AND (`||`/`&&` accepted), AND binds
+  tighter than OR. Enables OR visibility across fields, e.g. `wf-xano-if="last_edited_at | created_at"`
+  (show when any date is present). Single expressions and bare-field truthy tests unchanged.
+
 ## v0.11.0 — 2026-07-06
 
 ### Added
