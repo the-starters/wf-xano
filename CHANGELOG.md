@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.11.0 — 2026-07-06
+
+### Added
+
+- **`wf-xano-fallback`** — on a `wf-xano-bind` element, when the bound field is blank
+  (`null`/`""`/`0`/`"0"`) bind the first non-blank field from this comma-separated list instead.
+  E.g. `wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at"`. Generic (not
+  date-only). Shared blank rule with `fmt` via an `isBlank` helper.
+
 ## v0.10.0 — 2026-07-06
 
 ### Added — long date formats
