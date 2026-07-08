@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.0 — 2026-07-06
+
+### Added — long date formats
+
+- **`wf-xano-format="date-long"`** → `May 21, 2026` (full month) and **`"date-medium"`** →
+  `May 21, 2026` (short month), plus `datetime-long`. Pinned to en-US (override with
+  `WfXanoConfig.locale`) so month names are deterministic and `1/1` isn't ambiguous. Bare
+  `date`/`datetime` unchanged (visitor-locale short).
+
+### Fixed
+
+- Unset Xano timestamps (stored as `0`) rendered as **`1/1/1970`**; `fmt()` now treats `0`/`"0"`
+  and any non-positive epoch as empty, so those fields render blank.
+
 ## v0.9.0 — 2026-07-06
 
 ### Added — load modes (Finsweet `load`)

@@ -859,4 +859,27 @@ const FULL_PAGE1 = {
   console.log('PASS 24: append-mode filter change resets + replaces')
 }
 
+// ---------- Test 25: date format styles + epoch guard ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const F = w.WfXano._internal.fmt
+  const ms = Date.UTC(2026, 4, 21, 12, 0, 0) // 2026-05-21
+  assert.equal(F(ms, 'date-long'), 'May 21, 2026', 'date-long -> full month name')
+  assert.equal(F(ms, 'date-medium'), 'May 21, 2026', 'date-medium -> short month (May == May)')
+  assert.equal(F(Date.UTC(2026, 0, 1, 12), 'date-long'), 'January 1, 2026', 'date-long disambiguates 1/1')
+  assert.ok(/2026/.test(F(ms, 'date')), 'bare date still renders (locale short)')
+  // seconds-based timestamp (Xano sometimes) auto-scaled
+  assert.equal(F(Math.floor(ms / 1000), 'date-long'), 'May 21, 2026', 'seconds timestamp scaled to ms')
+  // epoch / unset guards -> empty (no more 1/1/1970)
+  assert.equal(F(0, 'date-long'), '', 'timestamp 0 -> empty, not 1/1/1970')
+  assert.equal(F('0', 'date'), '', 'string "0" -> empty')
+  assert.equal(F(null, 'date-long'), '', 'null -> empty')
+  assert.equal(F('', 'date'), '', 'empty string -> empty')
+  console.log('PASS 25: date styles (long/medium) + epoch guard')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

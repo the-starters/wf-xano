@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.9.0'
+  var VERSION = '0.10.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -199,14 +199,36 @@
     }
   }
 
-  /** Optional value formatting via wf-xano-format ("date" | "datetime" | "short-name" | else raw). */
+  // Explicit named date styles (Intl options), pinned to en-US so month
+  // names are deterministic across visitors — e.g. "May 21, 2026". Bare
+  // `date`/`datetime` are NOT here; they keep the visitor-locale toLocale*
+  // output for back-compat.
+  var DATE_STYLES = {
+    'date-medium': { year: 'numeric', month: 'short', day: 'numeric' }, // May 21, 2026
+    'date-long': { year: 'numeric', month: 'long', day: 'numeric' }, // September 3, 2026
+    'datetime-long': { dateStyle: 'long', timeStyle: 'short' },
+  }
+  var DATE_KINDS = { date: 1, datetime: 1, 'date-medium': 1, 'date-long': 1, 'datetime-long': 1 }
+
+  /** Optional value formatting via wf-xano-format. Date styles:
+   *  `date` (locale short, e.g. 5/21/2026), `date-medium` / `date-long`
+   *  ("May 21, 2026"), `datetime`, `datetime-long`. Also `short-name`, else
+   *  the raw value. */
   function fmt(value, kind) {
-    if (value == null || value === '') return ''
-    if (kind === 'date' || kind === 'datetime') {
+    // Guard empties AND the Unix epoch (0 / "0") — Xano stores unset
+    // timestamps as 0, which would otherwise render as "1/1/1970".
+    if (value == null || value === '' || value === 0 || value === '0') return ''
+    if (kind && DATE_KINDS[kind]) {
       var ms = typeof value === 'number' && value < 1e12 ? value * 1000 : value
       var d = new Date(ms)
-      if (isNaN(d.getTime())) return String(value)
-      return kind === 'datetime' ? d.toLocaleString() : d.toLocaleDateString()
+      if (isNaN(d.getTime()) || d.getTime() <= 0) return ''
+      if (kind === 'date') return d.toLocaleDateString()
+      if (kind === 'datetime') return d.toLocaleString()
+      try {
+        return new Intl.DateTimeFormat(CFG.locale || 'en-US', DATE_STYLES[kind]).format(d)
+      } catch (e) {
+        return d.toLocaleDateString()
+      }
     }
     if (kind === 'short-name') {
       var parts = String(value).trim().split(/\s+/).filter(Boolean)
