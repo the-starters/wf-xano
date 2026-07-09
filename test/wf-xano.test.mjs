@@ -988,7 +988,7 @@ const FULL_PAGE1 = {
       <p wf-xano-bind="description" class="clamp2" data-sh="100" data-ch="40"></p>
       <div wf-xano-element="show-more" wf-xano-target="description" wf-xano-class="clamp2" wf-xano-expanded-text="Show less">
         <div wf-xano-element="show-more-text">Show more</div>
-        <svg class="icon"></svg>
+        <svg class="icon" wf-xano-element="show-more-icon"></svg>
       </div>
     </div>
     <div wf-xano-empty style="display:none">none</div>
@@ -1004,16 +1004,19 @@ const FULL_PAGE1 = {
   const card = w.document.querySelector('[wf-xano-item]')
   const btn = card.querySelector('[wf-xano-element="show-more"]')
   const label = btn.querySelector('[wf-xano-element="show-more-text"]')
+  const icon = btn.querySelector('svg.icon')
   btn.click()
   assert.equal(label.textContent, 'Show less', 'label swapped in the text slot')
   assert.ok(btn.querySelector('svg.icon'), 'icon child survives the swap')
+  assert.ok(icon.classList.contains('is-wf-xano-expanded'), 'show-more-icon gets the expanded class')
   btn.click()
   assert.equal(label.textContent, 'Show more', 'label restored')
   assert.ok(btn.querySelector('svg.icon'), 'icon still present after collapse')
+  assert.ok(!icon.classList.contains('is-wf-xano-expanded'), 'icon expanded class cleared on collapse')
   // clicking the icon itself bubbles to the control
-  btn.querySelector('svg.icon').dispatchEvent(new w.Event('click', { bubbles: true }))
+  icon.dispatchEvent(new w.Event('click', { bubbles: true }))
   assert.equal(label.textContent, 'Show less', 'click on icon child toggles too')
-  console.log('PASS 28b: composite button — show-more-text slot, icon survives, child clicks bubble')
+  console.log('PASS 28b: composite button — show-more-text slot, show-more-icon class, child clicks bubble')
 }
 
 // ---------- Test 29: show-more hidden when target is not clamped ----------

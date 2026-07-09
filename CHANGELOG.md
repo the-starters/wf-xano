@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.13.2 — 2026-07-09
+
+### Added
+
+- **`wf-xano-element="show-more-icon"`** — descendants of a `show-more` control carrying this
+  marker get `is-wf-xano-expanded` toggled with the control, so chevron rotation can be styled
+  as a Designer combo class directly on the icon (Webflow has no descendant selectors).
+
 ## v0.13.1 — 2026-07-09
 
 ### Fixed
