@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.13.1'
+  var VERSION = '0.13.2'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -491,10 +491,14 @@
    *  Without the marker it writes to the control itself — fine for text-only
    *  buttons, but it would erase element children.
    *
-   *  While expanded, `is-wf-xano-expanded` is set on both the control and the
-   *  target (style hooks). Controls whose target isn't actually clamped are
-   *  hidden after render (short text needs no toggle) — see pruneShowMore.
-   *  Clicks never bubble: cards are commonly wrapped in wf-xano-link anchors. */
+   *  While expanded, `is-wf-xano-expanded` is set on the control, the target,
+   *  and any descendants marked wf-xano-element="show-more-icon" — the icon
+   *  marker exists because Webflow's Designer styles combo classes on the
+   *  element itself (no descendant selectors), so a chevron can get its
+   *  rotated state as a combo class directly on the icon. Controls whose
+   *  target isn't actually clamped are hidden after render (short text needs
+   *  no toggle) — see pruneShowMore. Clicks never bubble: cards are commonly
+   *  wrapped in wf-xano-link anchors. */
   function wireShowMore(card) {
     qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(function (btn) {
       var field = btn.getAttribute('wf-xano-target')
@@ -518,6 +522,7 @@
       btn.__wfXanoShowMoreTarget = target
       var clamp = btn.getAttribute('wf-xano-class')
       var labelEl = q(btn, '[wf-xano-element="show-more-text"]') || btn
+      var icons = qa(btn, '[wf-xano-element="show-more-icon"]')
       var moreText = labelEl.textContent
       var lessText = btn.getAttribute('wf-xano-expanded-text')
       btn.addEventListener('click', function (e) {
@@ -525,6 +530,9 @@
         e.stopPropagation()
         var expanded = btn.classList.toggle('is-wf-xano-expanded')
         target.classList.toggle('is-wf-xano-expanded', expanded)
+        icons.forEach(function (icon) {
+          icon.classList.toggle('is-wf-xano-expanded', expanded)
+        })
         if (clamp) target.classList.toggle(clamp, !expanded)
         if (lessText) labelEl.textContent = expanded ? lessText : moreText
       })
