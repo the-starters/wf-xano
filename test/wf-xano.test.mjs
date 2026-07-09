@@ -936,4 +936,72 @@ const FULL_PAGE1 = {
   console.log('PASS 27: wf-xano-if OR/AND logical combinators')
 }
 
+// ---------- Test 28: show-more expand/collapse (clamped target) ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+  <div wf-xano-list wf-xano-source="opp30:x/list" wf-xano-auth="none">
+    <a wf-xano-template href="#">
+      <h3 wf-xano-bind="title"></h3>
+      <p wf-xano-bind="description" class="clamp2" data-sh="100" data-ch="40"></p>
+      <button wf-xano-element="show-more" wf-xano-target="description" wf-xano-class="clamp2" wf-xano-expanded-text="Show less">Show more</button>
+      <div><span wf-xano-bind="summary" class="clamp1" data-sh="100" data-ch="40"></span>
+        <button class="nearest" wf-xano-element="show-more" wf-xano-class="clamp1">More</button></div>
+    </a>
+    <div wf-xano-empty style="display:none">none</div>
+  </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  // jsdom has no layout: fake scroll/client heights via data attributes
+  Object.defineProperty(w.Element.prototype, 'scrollHeight', { get() { return parseInt(this.getAttribute('data-sh') || '0', 10) } })
+  Object.defineProperty(w.Element.prototype, 'clientHeight', { get() { return parseInt(this.getAttribute('data-ch') || '0', 10) } })
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, title: 'T', description: 'long text', summary: 'also long' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'card rendered')
+  await new Promise((r) => setTimeout(r, 30)) // let the prune tick run
+  const card = w.document.querySelector('[wf-xano-item]')
+  const desc = card.querySelector('[wf-xano-bind="description"]')
+  const btn = card.querySelector('[wf-xano-element="show-more"][wf-xano-target]')
+  assert.notEqual(btn.style.display, 'none', 'clamped target keeps its show-more visible')
+  btn.click()
+  assert.ok(!desc.classList.contains('clamp2'), 'clamp class removed on expand')
+  assert.ok(desc.classList.contains('is-wf-xano-expanded'), 'target marked expanded')
+  assert.ok(btn.classList.contains('is-wf-xano-expanded'), 'control marked expanded')
+  assert.equal(btn.textContent, 'Show less', 'label swapped to expanded text')
+  btn.click()
+  assert.ok(desc.classList.contains('clamp2'), 'clamp class restored on collapse')
+  assert.ok(!desc.classList.contains('is-wf-xano-expanded'), 'expanded state cleared')
+  assert.equal(btn.textContent, 'Show more', 'label restored')
+  // nearest-bind resolution (no wf-xano-target): the wrapper's bind wins
+  const near = card.querySelector('button.nearest')
+  const summary = card.querySelector('[wf-xano-bind="summary"]')
+  near.click()
+  assert.ok(!summary.classList.contains('clamp1'), 'nearest bind resolved without wf-xano-target')
+  console.log('PASS 28: show-more expand/collapse, label swap, nearest-bind target')
+}
+
+// ---------- Test 29: show-more hidden when target is not clamped ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+  <div wf-xano-list wf-xano-source="opp30:x/list" wf-xano-auth="none">
+    <div wf-xano-template>
+      <p wf-xano-bind="description" class="clamp2" data-sh="40" data-ch="40"></p>
+      <button wf-xano-element="show-more" wf-xano-target="description" wf-xano-class="clamp2">Show more</button>
+    </div>
+    <div wf-xano-empty style="display:none">none</div>
+  </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  Object.defineProperty(w.Element.prototype, 'scrollHeight', { get() { return parseInt(this.getAttribute('data-sh') || '0', 10) } })
+  Object.defineProperty(w.Element.prototype, 'clientHeight', { get() { return parseInt(this.getAttribute('data-ch') || '0', 10) } })
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, description: 'short' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'card rendered')
+  await new Promise((r) => setTimeout(r, 30))
+  const btn = w.document.querySelector('[wf-xano-item] [wf-xano-element="show-more"]')
+  assert.equal(btn.style.display, 'none', 'unclamped target hides its show-more control')
+  console.log('PASS 29: show-more auto-hidden when text is not clamped')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
