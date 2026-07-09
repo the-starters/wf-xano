@@ -1043,4 +1043,52 @@ const FULL_PAGE1 = {
   console.log('PASS 29: show-more auto-hidden when text is not clamped')
 }
 
+// ---------- Test 30: standalone show-more (no wf-xano list; data-opp-bind + clamp-class targets) ----------
+{
+  // A page with NO wf-xano list: the boot-time initShowMore must still wire
+  // these. One target is a data-opp-bind field; the other is resolved purely
+  // by its clamp class (no bind at all — the static CMS case).
+  const MARKUP = `<!doctype html><html><body>
+    <section>
+      <p data-opp-bind="description" class="clamp2" data-sh="120" data-ch="40">long description text</p>
+      <a wf-xano-element="show-more" wf-xano-target="description" wf-xano-class="clamp2" wf-xano-expanded-text="Show less" href="#">Show more</a>
+    </section>
+    <section>
+      <div class="rte clamp5" data-sh="300" data-ch="100">rich text body</div>
+      <a wf-xano-element="show-more" wf-xano-class="clamp5" href="#">Show more</a>
+    </section>
+    <section>
+      <div class="rte clamp5" data-sh="40" data-ch="100">short body</div>
+      <a wf-xano-element="show-more" wf-xano-class="clamp5" href="#">Show more</a>
+    </section>
+  </body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  Object.defineProperty(w.Element.prototype, 'scrollHeight', { get() { return parseInt(this.getAttribute('data-sh') || '0', 10) } })
+  Object.defineProperty(w.Element.prototype, 'clientHeight', { get() { return parseInt(this.getAttribute('data-ch') || '0', 10) } })
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  await new Promise((r) => setTimeout(r, 40)) // boot + prune passes
+  const btns = [...w.document.querySelectorAll('[wf-xano-element="show-more"]')]
+  // #0: data-opp-bind target, clamped -> visible, toggles the clamp class
+  const desc = w.document.querySelector('[data-opp-bind="description"]')
+  assert.notEqual(btns[0].style.display, 'none', 'standalone: data-opp-bind clamped target keeps control visible')
+  btns[0].click()
+  assert.ok(!desc.classList.contains('clamp2'), 'standalone: clamp class removed on expand (data-opp-bind target)')
+  assert.equal(btns[0].textContent, 'Show less', 'standalone: label swap works')
+  btns[0].click()
+  assert.ok(desc.classList.contains('clamp2'), 'standalone: clamp restored on collapse')
+  // #1: clamp-class-only target (no bind), clamped -> visible and toggles
+  const rte = w.document.querySelectorAll('.rte')[0]
+  assert.notEqual(btns[1].style.display, 'none', 'standalone: clamp-class-only target resolves and shows')
+  btns[1].click()
+  assert.ok(!rte.classList.contains('clamp5'), 'standalone: clamp-class-only target toggles')
+  // #2: clamp-class target but not clamped -> hidden
+  assert.equal(btns[2].style.display, 'none', 'standalone: unclamped target hides control')
+  // WfXano.initShowMore is exposed for re-runs
+  assert.equal(typeof w.WfXano.initShowMore, 'function', 'WfXano.initShowMore exposed')
+  console.log('PASS 30: standalone show-more — data-opp-bind + clamp-class targets, prune, API')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

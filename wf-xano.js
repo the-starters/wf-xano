@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.13.2'
+  var VERSION = '0.14.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -472,18 +472,28 @@
     })
   }
 
-  /** Per-card "show more" toggle: a clickable inside the template that
-   *  expands a clamped bound element (CSS line-clamp utility class) in the
-   *  same card. Webflow interactions can't do this — IX2 never binds to
-   *  runtime clones — so the library owns it:
+  /** "Show more" toggle: a clickable that expands a clamped text element (a
+   *  CSS line-clamp utility class) by removing the clamp class. Webflow
+   *  interactions can't do this on wf-xano list cards (IX2 never binds to
+   *  runtime clones), and the same control is useful on static / other-binder
+   *  pages (a CMS detail page's rich text) — so the library owns it and works
+   *  in both places:
    *
    *    <div wf-xano-element="show-more"
-   *         wf-xano-target="description"       (bind field to expand; default:
-   *                                             nearest wf-xano-bind in scope)
+   *         wf-xano-target="description"       (optional: a wf-xano-bind OR
+   *                                             data-opp-bind field to expand)
    *         wf-xano-class="text-style-2lines"  (clamp class removed while
    *                                             expanded, restored on collapse)
    *         wf-xano-expanded-text="Show less"> (optional label swap)
    *      Show more</div>
+   *
+   *  Target resolution (resolveShowMoreTarget) walks up from the control and,
+   *  at each ancestor, picks the first match of: the wf-xano-target field
+   *  (matched against BOTH wf-xano-bind and data-opp-bind, so opportunities-3.0
+   *  data-bound pages work), then an element carrying the wf-xano-class clamp
+   *  class (the class IS the target marker on static pages that have no bind),
+   *  then any bound element. In a list card the walk is bounded by the card;
+   *  standalone it walks to <body>.
    *
    *  Composite buttons (label + icon children): the label swap writes to the
    *  descendant marked wf-xano-element="show-more-text" when present, so
@@ -496,59 +506,119 @@
    *  marker exists because Webflow's Designer styles combo classes on the
    *  element itself (no descendant selectors), so a chevron can get its
    *  rotated state as a combo class directly on the icon. Controls whose
-   *  target isn't actually clamped are hidden after render (short text needs
-   *  no toggle) — see pruneShowMore. Clicks never bubble: cards are commonly
-   *  wrapped in wf-xano-link anchors. */
+   *  target isn't actually clamped are hidden (short text needs no toggle) —
+   *  see pruneShowMoreButton. Clicks never bubble: cards are commonly wrapped
+   *  in wf-xano-link anchors. */
+  /** Of several candidate targets in a scope, pick the one nearest the control
+   *  in document order — the closest element BEFORE it (the common "text then
+   *  Show-more" layout), else the closest AFTER. Keeps sibling controls from
+   *  all resolving to the first match when a scope holds several. */
+  function nearestToButton(list, btn) {
+    var before = null
+    var after = null
+    list.forEach(function (el) {
+      if (el === btn || btn.contains(el) || el.contains(btn)) return
+      var pos = btn.compareDocumentPosition(el)
+      if (pos & 2 /* PRECEDING */) before = el // last preceding = closest before
+      else if (pos & 4 /* FOLLOWING */ && !after) after = el // first following = closest after
+    })
+    return before || after
+  }
+
+  function resolveShowMoreTarget(btn, boundary) {
+    var field = btn.getAttribute('wf-xano-target')
+    var clamp = btn.getAttribute('wf-xano-class')
+    var clampSel = clamp ? '.' + clamp.trim().split(/\s+/).join('.') : null
+    var scope = btn.parentElement
+    while (scope) {
+      var matches = field ? qa(scope, '[wf-xano-bind="' + field + '"], [data-opp-bind="' + field + '"]') : []
+      if (!matches.length && clampSel) matches = qa(scope, clampSel)
+      if (!matches.length) matches = qa(scope, '[wf-xano-bind], [data-opp-bind]')
+      var t = nearestToButton(matches, btn)
+      if (t) return t
+      if (scope === boundary || scope === document.body) break
+      scope = scope.parentElement
+    }
+    return null
+  }
+
+  /** Attach the toggle behavior once. @param {Element} btn @param {Element} target */
+  function wireShowMoreButton(btn, target) {
+    if (btn.__wfXanoShowMore) return
+    btn.__wfXanoShowMore = true
+    btn.__wfXanoShowMoreTarget = target
+    var clamp = btn.getAttribute('wf-xano-class')
+    var labelEl = q(btn, '[wf-xano-element="show-more-text"]') || btn
+    var icons = qa(btn, '[wf-xano-element="show-more-icon"]')
+    var moreText = labelEl.textContent
+    var lessText = btn.getAttribute('wf-xano-expanded-text')
+    btn.addEventListener('click', function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      var expanded = btn.classList.toggle('is-wf-xano-expanded')
+      target.classList.toggle('is-wf-xano-expanded', expanded)
+      icons.forEach(function (icon) {
+        icon.classList.toggle('is-wf-xano-expanded', expanded)
+      })
+      if (clamp) target.classList.toggle(clamp, !expanded)
+      if (lessText) labelEl.textContent = expanded ? lessText : moreText
+    })
+  }
+
+  /** Wire every show-more inside a rendered list card (target search bounded
+   *  by the card). @param {Element} card */
   function wireShowMore(card) {
     qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(function (btn) {
-      var field = btn.getAttribute('wf-xano-target')
-      var target = null
-      if (field) {
-        target = q(card, '[wf-xano-bind="' + field + '"]')
-      } else {
-        // nearest bind: walk up from the control until a wrapper (within the
-        // card) contains one — same resolution rule as wf-validate slots
-        var scope = btn.parentElement
-        while (scope && !target) {
-          target = q(scope, '[wf-xano-bind]')
-          if (scope === card) break
-          scope = scope.parentElement
-        }
-      }
+      var target = resolveShowMoreTarget(btn, card)
       if (!target) {
         log('show-more: no target found', btn)
         return
       }
-      btn.__wfXanoShowMoreTarget = target
-      var clamp = btn.getAttribute('wf-xano-class')
-      var labelEl = q(btn, '[wf-xano-element="show-more-text"]') || btn
-      var icons = qa(btn, '[wf-xano-element="show-more-icon"]')
-      var moreText = labelEl.textContent
-      var lessText = btn.getAttribute('wf-xano-expanded-text')
-      btn.addEventListener('click', function (e) {
-        e.preventDefault()
-        e.stopPropagation()
-        var expanded = btn.classList.toggle('is-wf-xano-expanded')
-        target.classList.toggle('is-wf-xano-expanded', expanded)
-        icons.forEach(function (icon) {
-          icon.classList.toggle('is-wf-xano-expanded', expanded)
-        })
-        if (clamp) target.classList.toggle(clamp, !expanded)
-        if (lessText) labelEl.textContent = expanded ? lessText : moreText
-      })
+      wireShowMoreButton(btn, target)
     })
   }
 
-  /** Hide show-more controls whose target isn't actually clamped (needs the
-   *  cards laid out in the DOM, so render() calls this a frame after
-   *  appending). +1 tolerates sub-pixel rounding. */
+  /** Show/hide one control by whether its target is actually clamped. Two-way
+   *  (un-hides too) so late-bound content that becomes clamped re-shows the
+   *  control on a later pass; never touches an expanded control. +1 tolerates
+   *  sub-pixel rounding. @param {Element} btn */
+  function pruneShowMoreButton(btn) {
+    var target = btn.__wfXanoShowMoreTarget
+    if (!target || btn.classList.contains('is-wf-xano-expanded')) return
+    btn.style.display = target.scrollHeight > target.clientHeight + 1 ? '' : 'none'
+  }
+
+  /** Prune every show-more in a set of cards. @param {Element[]} cards */
   function pruneShowMore(cards) {
     cards.forEach(function (card) {
-      qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(function (btn) {
-        var target = btn.__wfXanoShowMoreTarget
-        if (target && target.scrollHeight <= target.clientHeight + 1) btn.style.display = 'none'
-      })
+      qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(pruneShowMoreButton)
     })
+  }
+
+  /** Standalone show-more for pages with no wf-xano list (static CMS / detail
+   *  pages, or content bound by another script such as opportunities-3.0.js).
+   *  Wires controls NOT inside a list card/template — those are handled by
+   *  render(). Content on such pages may be bound async, so prune now, after
+   *  layout, and once more shortly after; expose WfXano.initShowMore for an
+   *  explicit re-run after a known bind. @param {ParentNode} [scope] */
+  function initShowMore(scope) {
+    var root = scope || document
+    var buttons = qa(root, '[wf-xano-element="show-more"]').filter(function (btn) {
+      return !btn.closest('[wf-xano-item], [wf-xano-element="template"], [wf-xano-template]')
+    })
+    buttons.forEach(function (btn) {
+      var target = resolveShowMoreTarget(btn, null)
+      if (!target) {
+        log('show-more (standalone): no target found', btn)
+        return
+      }
+      wireShowMoreButton(btn, target)
+    })
+    var prune = function () {
+      buttons.forEach(pruneShowMoreButton)
+    }
+    setTimeout(prune, 0)
+    setTimeout(prune, 600)
   }
 
   /** Read a filter control's effective value. Checkbox GROUPS combine all
@@ -1321,6 +1391,7 @@
     if (_booted) return
     _booted = true
     init(document)
+    initShowMore(document)
     _pendingCallbacks.splice(0).forEach(runCallback)
   }
 
@@ -1331,6 +1402,9 @@
     version: VERSION,
     instances: instances,
     init: init,
+    /** (Re)wire standalone show-more controls (non-list pages, or after another
+     *  script binds content). Optional scope; defaults to the whole document. */
+    initShowMore: initShowMore,
     /** Queue (pre-boot) or immediately run (post-boot) a callback with the API. */
     push: function (fn) {
       if (typeof fn !== 'function') return

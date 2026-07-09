@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.14.0 — 2026-07-09
+
+### Added
+
+- **Standalone `show-more`** — the show-more control now works on pages with no wf-xano
+  list (static CMS / detail pages, or content bound by another script like
+  opportunities-3.0.js), wired at boot by a new document-level `initShowMore`.
+  Target resolution now matches the `wf-xano-target` field against **both `wf-xano-bind`
+  and `data-opp-bind`**, and falls back to the nearest element carrying the
+  `wf-xano-class` clamp class (the clamp class is the target marker on pages with no
+  bind). `WfXano.initShowMore(scope?)` is exposed for an explicit re-run after
+  async content binding.
+
+### Changed
+
+- `pruneShowMoreButton` is now two-way (un-hides a control whose target became clamped
+  after a late content bind) and never touches an expanded control.
+
 ## v0.13.2 — 2026-07-09
 
 ### Added
