@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.13.1 — 2026-07-09
+
+### Fixed
+
+- **`show-more` on composite buttons** — the label swap (`wf-xano-expanded-text`) wrote
+  `textContent` on the control, erasing icon/line children on Webflow composite buttons.
+  Mark the label child with `wf-xano-element="show-more-text"` and the swap writes there
+  instead (wf-validate's error/message split, same dialect). No marker = old behavior
+  (fine for text-only controls).
+
 ## v0.13.0 — 2026-07-09
 
 ### Added

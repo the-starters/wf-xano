@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.13.0'
+  var VERSION = '0.13.1'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -485,6 +485,12 @@
    *         wf-xano-expanded-text="Show less"> (optional label swap)
    *      Show more</div>
    *
+   *  Composite buttons (label + icon children): the label swap writes to the
+   *  descendant marked wf-xano-element="show-more-text" when present, so
+   *  sibling icons survive (wf-validate's error/message split, same dialect).
+   *  Without the marker it writes to the control itself — fine for text-only
+   *  buttons, but it would erase element children.
+   *
    *  While expanded, `is-wf-xano-expanded` is set on both the control and the
    *  target (style hooks). Controls whose target isn't actually clamped are
    *  hidden after render (short text needs no toggle) — see pruneShowMore.
@@ -511,7 +517,8 @@
       }
       btn.__wfXanoShowMoreTarget = target
       var clamp = btn.getAttribute('wf-xano-class')
-      var moreText = btn.textContent
+      var labelEl = q(btn, '[wf-xano-element="show-more-text"]') || btn
+      var moreText = labelEl.textContent
       var lessText = btn.getAttribute('wf-xano-expanded-text')
       btn.addEventListener('click', function (e) {
         e.preventDefault()
@@ -519,7 +526,7 @@
         var expanded = btn.classList.toggle('is-wf-xano-expanded')
         target.classList.toggle('is-wf-xano-expanded', expanded)
         if (clamp) target.classList.toggle(clamp, !expanded)
-        if (lessText) btn.textContent = expanded ? lessText : moreText
+        if (lessText) labelEl.textContent = expanded ? lessText : moreText
       })
     })
   }

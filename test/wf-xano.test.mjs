@@ -980,6 +980,42 @@ const FULL_PAGE1 = {
   console.log('PASS 28: show-more expand/collapse, label swap, nearest-bind target')
 }
 
+// ---------- Test 28b: composite show-more button — label swaps in the text slot, icon survives ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+  <div wf-xano-list wf-xano-source="opp30:x/list" wf-xano-auth="none">
+    <div wf-xano-template>
+      <p wf-xano-bind="description" class="clamp2" data-sh="100" data-ch="40"></p>
+      <div wf-xano-element="show-more" wf-xano-target="description" wf-xano-class="clamp2" wf-xano-expanded-text="Show less">
+        <div wf-xano-element="show-more-text">Show more</div>
+        <svg class="icon"></svg>
+      </div>
+    </div>
+    <div wf-xano-empty style="display:none">none</div>
+  </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  Object.defineProperty(w.Element.prototype, 'scrollHeight', { get() { return parseInt(this.getAttribute('data-sh') || '0', 10) } })
+  Object.defineProperty(w.Element.prototype, 'clientHeight', { get() { return parseInt(this.getAttribute('data-ch') || '0', 10) } })
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, description: 'long text' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'card rendered')
+  const card = w.document.querySelector('[wf-xano-item]')
+  const btn = card.querySelector('[wf-xano-element="show-more"]')
+  const label = btn.querySelector('[wf-xano-element="show-more-text"]')
+  btn.click()
+  assert.equal(label.textContent, 'Show less', 'label swapped in the text slot')
+  assert.ok(btn.querySelector('svg.icon'), 'icon child survives the swap')
+  btn.click()
+  assert.equal(label.textContent, 'Show more', 'label restored')
+  assert.ok(btn.querySelector('svg.icon'), 'icon still present after collapse')
+  // clicking the icon itself bubbles to the control
+  btn.querySelector('svg.icon').dispatchEvent(new w.Event('click', { bubbles: true }))
+  assert.equal(label.textContent, 'Show less', 'click on icon child toggles too')
+  console.log('PASS 28b: composite button — show-more-text slot, icon survives, child clicks bubble')
+}
+
 // ---------- Test 29: show-more hidden when target is not clamped ----------
 {
   const MARKUP = `<!doctype html><html><body>
