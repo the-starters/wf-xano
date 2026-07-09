@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.12.0'
+  var VERSION = '0.13.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -469,6 +469,70 @@
       var suf = a.getAttribute('wf-xano-link-suffix') || ''
       var v = get(item, field)
       if (v != null) a.setAttribute('href', pre + v + suf)
+    })
+  }
+
+  /** Per-card "show more" toggle: a clickable inside the template that
+   *  expands a clamped bound element (CSS line-clamp utility class) in the
+   *  same card. Webflow interactions can't do this — IX2 never binds to
+   *  runtime clones — so the library owns it:
+   *
+   *    <div wf-xano-element="show-more"
+   *         wf-xano-target="description"       (bind field to expand; default:
+   *                                             nearest wf-xano-bind in scope)
+   *         wf-xano-class="text-style-2lines"  (clamp class removed while
+   *                                             expanded, restored on collapse)
+   *         wf-xano-expanded-text="Show less"> (optional label swap)
+   *      Show more</div>
+   *
+   *  While expanded, `is-wf-xano-expanded` is set on both the control and the
+   *  target (style hooks). Controls whose target isn't actually clamped are
+   *  hidden after render (short text needs no toggle) — see pruneShowMore.
+   *  Clicks never bubble: cards are commonly wrapped in wf-xano-link anchors. */
+  function wireShowMore(card) {
+    qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(function (btn) {
+      var field = btn.getAttribute('wf-xano-target')
+      var target = null
+      if (field) {
+        target = q(card, '[wf-xano-bind="' + field + '"]')
+      } else {
+        // nearest bind: walk up from the control until a wrapper (within the
+        // card) contains one — same resolution rule as wf-validate slots
+        var scope = btn.parentElement
+        while (scope && !target) {
+          target = q(scope, '[wf-xano-bind]')
+          if (scope === card) break
+          scope = scope.parentElement
+        }
+      }
+      if (!target) {
+        log('show-more: no target found', btn)
+        return
+      }
+      btn.__wfXanoShowMoreTarget = target
+      var clamp = btn.getAttribute('wf-xano-class')
+      var moreText = btn.textContent
+      var lessText = btn.getAttribute('wf-xano-expanded-text')
+      btn.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        var expanded = btn.classList.toggle('is-wf-xano-expanded')
+        target.classList.toggle('is-wf-xano-expanded', expanded)
+        if (clamp) target.classList.toggle(clamp, !expanded)
+        if (lessText) btn.textContent = expanded ? lessText : moreText
+      })
+    })
+  }
+
+  /** Hide show-more controls whose target isn't actually clamped (needs the
+   *  cards laid out in the DOM, so render() calls this a frame after
+   *  appending). +1 tolerates sub-pixel rounding. */
+  function pruneShowMore(cards) {
+    cards.forEach(function (card) {
+      qaWithRoot(card, '[wf-xano-element="show-more"]').forEach(function (btn) {
+        var target = btn.__wfXanoShowMoreTarget
+        if (target && target.scrollHeight <= target.clientHeight + 1) btn.style.display = 'none'
+      })
     })
   }
 
@@ -1055,6 +1119,7 @@
     showStateEl(this.emptyEl, !rendered)
     this.root.classList.toggle('is-wf-xano-empty', !rendered)
     var self = this
+    var appended = []
     result.items.forEach(function (item) {
       var card = self.template.cloneNode(true)
       clearRole(card, 'template')
@@ -1062,8 +1127,16 @@
       card.style.display = ''
       if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
       fillCard(card, item)
+      wireShowMore(card)
       list.appendChild(card)
+      appended.push(card)
     })
+    // Clamp detection needs layout, so measure a tick after the cards land.
+    if (appended.length && q(list, '[wf-xano-element="show-more"]')) {
+      setTimeout(function () {
+        pruneShowMore(appended)
+      }, 0)
+    }
     // Counts: total + visible range. In append modes the visible range runs
     // from 1 to the accumulated count; in pagination mode it's this page.
     var shownTotal = qa(list, '[wf-xano-item]').length

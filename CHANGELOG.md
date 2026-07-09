@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.13.0 — 2026-07-09
+
+### Added
+
+- **`wf-xano-element="show-more"`** — per-card expand/collapse for CSS-clamped bound text
+  (Webflow IX2 can't bind to runtime clones, so the library owns it). Settings:
+  `wf-xano-target="<field>"` (default: nearest bind), `wf-xano-class="<clamp class>"`
+  (removed while expanded), optional `wf-xano-expanded-text` label swap. Expanded state =
+  `is-wf-xano-expanded` on control + target. Controls auto-hide when the target isn't
+  actually clamped. Clicks are stopped from bubbling into `wf-xano-link` card anchors.
+
 ## v0.12.0 — 2026-07-06
 
 ### Added
