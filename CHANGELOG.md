@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.15.0 — 2026-07-09
+
+### Added
+
+- **`show-more` `wf-xano-class` accepts multiple classes and `*` globs** — space-separated
+  exact names and/or globs like `text-style-*line*`. On expand, EVERY matching class on the
+  target is stripped (and restored on collapse), so a target carrying both a desktop and a
+  `-mob` clamp (`text-style-5lines text-style-2lines-mob`) fully expands on both breakpoints —
+  a single named class only stripped itself. Target resolution understands globs too (scans +
+  matches when the spec has no plain selector). A single exact class behaves exactly as before.
+
 ## v0.14.0 — 2026-07-09
 
 ### Added
