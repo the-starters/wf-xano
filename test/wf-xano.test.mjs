@@ -1091,4 +1091,34 @@ const FULL_PAGE1 = {
   console.log('PASS 30: standalone show-more — data-opp-bind + clamp-class targets, prune, API')
 }
 
+// ---------- Test 31: show-more glob wf-xano-class strips ALL matching clamp classes ----------
+{
+  // Target has BOTH a desktop and a -mob clamp class; a glob strips/restores both.
+  const MARKUP = `<!doctype html><html><body>
+    <section>
+      <div class="rte text-style-5lines text-style-2lines-mob" data-sh="200" data-ch="60">long body text here</div>
+      <a wf-xano-element="show-more" wf-xano-class="text-style-*line*" wf-xano-expanded-text="Show less" href="#">Show more</a>
+    </section>
+  </body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  Object.defineProperty(w.Element.prototype, 'scrollHeight', { get() { return parseInt(this.getAttribute('data-sh') || '0', 10) } })
+  Object.defineProperty(w.Element.prototype, 'clientHeight', { get() { return parseInt(this.getAttribute('data-ch') || '0', 10) } })
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  await new Promise((r) => setTimeout(r, 40))
+  const btn = w.document.querySelector('[wf-xano-element="show-more"]')
+  const rte = w.document.querySelector('.rte')
+  assert.ok(btn.__wfXanoShowMoreTarget === rte, 'glob spec resolves the target by scanning')
+  assert.notEqual(btn.style.display, 'none', 'glob: clamped target keeps control visible')
+  btn.click()
+  assert.ok(!rte.classList.contains('text-style-5lines'), 'glob: desktop clamp stripped on expand')
+  assert.ok(!rte.classList.contains('text-style-2lines-mob'), 'glob: -mob clamp ALSO stripped on expand')
+  btn.click()
+  assert.ok(rte.classList.contains('text-style-5lines'), 'glob: desktop clamp restored on collapse')
+  assert.ok(rte.classList.contains('text-style-2lines-mob'), 'glob: -mob clamp restored on collapse')
+  console.log('PASS 31: show-more glob wf-xano-class strips + restores every matching clamp class')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

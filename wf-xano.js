@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.14.0'
+  var VERSION = '0.15.0'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -482,8 +482,11 @@
    *    <div wf-xano-element="show-more"
    *         wf-xano-target="description"       (optional: a wf-xano-bind OR
    *                                             data-opp-bind field to expand)
-   *         wf-xano-class="text-style-2lines"  (clamp class removed while
-   *                                             expanded, restored on collapse)
+   *         wf-xano-class="text-style-2lines"  (clamp class(es) removed while
+   *                                             expanded, restored on collapse;
+   *                                             space-separated, and `*` globs
+   *                                             allowed e.g. text-style-*line*
+   *                                             to strip desktop + -mob at once)
    *         wf-xano-expanded-text="Show less"> (optional label swap)
    *      Show more</div>
    *
@@ -509,6 +512,51 @@
    *  target isn't actually clamped are hidden (short text needs no toggle) —
    *  see pruneShowMoreButton. Clicks never bubble: cards are commonly wrapped
    *  in wf-xano-link anchors. */
+  /** Parse a wf-xano-class spec — space-separated exact class names and/or `*`
+   *  globs — into a predicate. A glob (e.g. `text-style-*line*`) matches every
+   *  clamp variant on a target, desktop AND `-mob`, so expand can strip them
+   *  all; a single named class can only strip itself. */
+  function clampMatcher(spec) {
+    var exact = {}
+    var patterns = []
+    spec.trim().split(/\s+/).forEach(function (tok) {
+      if (!tok) return
+      if (tok.indexOf('*') > -1) {
+        patterns.push(new RegExp('^' + tok.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'))
+      } else {
+        exact[tok] = true
+      }
+    })
+    return function (cls) {
+      if (exact[cls]) return true
+      for (var i = 0; i < patterns.length; i++) if (patterns[i].test(cls)) return true
+      return false
+    }
+  }
+
+  /** A plain CSS selector (OR of the spec's classes) for target resolution, or
+   *  null when the spec uses a `*` glob — callers then scan with the matcher. */
+  function clampSelector(spec) {
+    var tokens = spec.trim().split(/\s+/)
+    if (
+      tokens.some(function (t) {
+        return t.indexOf('*') > -1
+      })
+    )
+      return null
+    return tokens
+      .filter(Boolean)
+      .map(function (t) {
+        return '.' + t
+      })
+      .join(', ')
+  }
+
+  /** @param {Element} el @param {(c:string)=>boolean} fn */
+  function someClass(el, fn) {
+    return Array.prototype.some.call(el.classList, fn)
+  }
+
   /** Of several candidate targets in a scope, pick the one nearest the control
    *  in document order — the closest element BEFORE it (the common "text then
    *  Show-more" layout), else the closest AFTER. Keeps sibling controls from
@@ -528,11 +576,19 @@
   function resolveShowMoreTarget(btn, boundary) {
     var field = btn.getAttribute('wf-xano-target')
     var clamp = btn.getAttribute('wf-xano-class')
-    var clampSel = clamp ? '.' + clamp.trim().split(/\s+/).join('.') : null
+    var clampSel = clamp ? clampSelector(clamp) : null
+    var matchClamp = clamp ? clampMatcher(clamp) : null
     var scope = btn.parentElement
     while (scope) {
       var matches = field ? qa(scope, '[wf-xano-bind="' + field + '"], [data-opp-bind="' + field + '"]') : []
-      if (!matches.length && clampSel) matches = qa(scope, clampSel)
+      if (!matches.length && clamp) {
+        // exact classes → fast selector; glob → scan and test with the matcher
+        matches = clampSel
+          ? qa(scope, clampSel)
+          : qa(scope, '[class]').filter(function (el) {
+              return someClass(el, matchClamp)
+            })
+      }
       if (!matches.length) matches = qa(scope, '[wf-xano-bind], [data-opp-bind]')
       var t = nearestToButton(matches, btn)
       if (t) return t
@@ -548,6 +604,7 @@
     btn.__wfXanoShowMore = true
     btn.__wfXanoShowMoreTarget = target
     var clamp = btn.getAttribute('wf-xano-class')
+    var matchClamp = clamp ? clampMatcher(clamp) : null
     var labelEl = q(btn, '[wf-xano-element="show-more-text"]') || btn
     var icons = qa(btn, '[wf-xano-element="show-more-icon"]')
     var moreText = labelEl.textContent
@@ -560,7 +617,23 @@
       icons.forEach(function (icon) {
         icon.classList.toggle('is-wf-xano-expanded', expanded)
       })
-      if (clamp) target.classList.toggle(clamp, !expanded)
+      // On expand, remove EVERY class on the target matching the spec (so a
+      // desktop + `-mob` clamp pair both come off), remembering them; on
+      // collapse, restore exactly those. A single exact class behaves as before.
+      if (matchClamp) {
+        if (expanded) {
+          var stripped = Array.prototype.filter.call(target.classList, matchClamp)
+          stripped.forEach(function (c) {
+            target.classList.remove(c)
+          })
+          target.__wfXanoStripped = stripped
+        } else {
+          ;(target.__wfXanoStripped || []).forEach(function (c) {
+            target.classList.add(c)
+          })
+          target.__wfXanoStripped = null
+        }
+      }
       if (lessText) labelEl.textContent = expanded ? lessText : moreText
     })
   }
