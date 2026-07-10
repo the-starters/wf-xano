@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.15.0'
+  var VERSION = '0.15.1'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -427,7 +427,13 @@
       var hasMore = data.nextPage != null ? true : page < pages
       return { items: data.items, total: total, page: page, pages: pages, hasMore: hasMore }
     }
-    // Single object or unknown shape: render as one row.
+    // Scalar bodies (a bare string/number/bool with HTTP 200 — e.g. a
+    // backend debug message) are not data: rendering them would produce a
+    // phantom card with every bind empty. Surface as an error instead.
+    if (data != null && typeof data !== 'object') {
+      throw new Error('wf-xano unexpected response shape (' + typeof data + '): ' + String(data).slice(0, 120))
+    }
+    // Single object: render as one row.
     return { items: data ? [data] : [], total: data ? 1 : 0, page: 1, pages: 1, hasMore: false }
   }
 
@@ -775,6 +781,7 @@
       })[0] || null
     this.listeners = {}
     this._searchTimer = null
+    this._hydrating = false
     this._seq = 0
     this._pages = 1
     this._lastResult = null
@@ -889,6 +896,7 @@
    *  Click filters are handled by the is-active pass in updateFilterUI. */
   Instance.prototype.hydrateControls = function () {
     var self = this
+    this._hydrating = true
     this.qa('[wf-xano-filter], [wf-xano-search]').forEach(function (el) {
       if (el.matches('[wf-xano-element="clear"], [wf-xano-clear]')) return
       var field = el.getAttribute('wf-xano-filter') || el.getAttribute('wf-xano-search')
@@ -902,11 +910,21 @@
           .filter(Boolean)
         var v = el.getAttribute('wf-xano-value') || (el.value !== 'on' ? el.value : '')
         // `*` = the match-all option: checked exactly when no value is set.
-        el.checked = v === '*' ? values.length === 0 : values.indexOf(v) > -1
+        var want = v === '*' ? values.length === 0 : values.indexOf(v) > -1
+        if (el.checked !== want) {
+          el.checked = want
+          // Programmatic checks fire no events, so Webflow's forms JS and
+          // page tab scripts never repaint their custom control faces (the
+          // Designer-default option keeps w--redirected-checked after a URL
+          // restore). Announce the change; our own listener sees _hydrating
+          // and skips, so hydration never triggers a re-fetch.
+          el.dispatchEvent(new Event('change', { bubbles: true }))
+        }
         return
       }
       if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) el.value = raw
     })
+    this._hydrating = false
     this.updateFilterUI()
   }
 
@@ -928,6 +946,7 @@
       el.addEventListener(
         'change',
         function () {
+          if (self._hydrating) return // our own hydrateControls dispatch — state already matches params
           var group = formFilterEls.filter(function (other) {
             return other.getAttribute('wf-xano-filter') === field
           })

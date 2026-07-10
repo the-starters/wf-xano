@@ -1121,4 +1121,56 @@ const FULL_PAGE1 = {
   console.log('PASS 31: show-more glob wf-xano-class strips + restores every matching clamp class')
 }
 
+// ---------- Test 32: scalar response body -> error state, never a phantom row ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes('Brand profile not found') // debug.stop-style HTTP 200 string
+  w.eval(LIB)
+  const listEl = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => listEl.classList.contains('is-wf-xano-error')), 'scalar body surfaces error state')
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 0, 'no phantom card rendered')
+  const N = w.WfXano._internal.normalize
+  assert.throws(() => N('oops', 20), /unexpected response shape/, 'normalize throws on string')
+  assert.throws(() => N(42, 20), /unexpected response shape/, 'normalize throws on number')
+  assert.deepEqual(N({ id: 1 }, 20).total, 1, 'single object still renders one row')
+  console.log('PASS 32: scalar 200 body -> error state, no phantom card')
+}
+
+// ---------- Test 33: URL-restore hydration fires change on radios (Webflow face sync), without a re-fetch ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="g:p" wf-xano-auth="none">
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="*" checked></label>
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Active"></label>
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Closed"></label>
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+    </section></body></html>`,
+    { runScripts: 'outside-only', url: 'https://x.test/page?opps_status=Closed' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  const bodies = []
+  const changed = []
+  w.document.addEventListener('change', (e) => changed.push(e.target.getAttribute('wf-xano-value')))
+  w.fetch = (url, opts) => { bodies.push(JSON.parse(opts.body)); return makeRes(PAGE([{ id: 1, title: 'T', status: 'Closed' }], 1)) }
+  w.eval(LIB)
+  await waitFor(() => bodies.length === 1)
+  const radios = [...w.document.querySelectorAll('[wf-xano-filter]')]
+  assert.equal(radios[2].checked, true, 'Closed radio checked from URL')
+  assert.equal(radios[0].checked, false, 'match-all radio unchecked from URL')
+  assert.ok(changed.includes('Closed'), 'change event bubbles for the newly checked radio')
+  assert.ok(changed.includes('*'), 'change event bubbles for the unchecked Designer-default radio')
+  await new Promise((r) => setTimeout(r, 60))
+  assert.equal(bodies.length, 1, 'hydration change events do not trigger a second fetch')
+  assert.equal(bodies[0].status, 'Closed', 'restored filter sent to the endpoint')
+  // A real user change must still re-fetch (skip flag cleared after hydration).
+  radios[1].checked = true
+  radios[2].checked = false
+  radios[1].dispatchEvent(new w.Event('change', { bubbles: true }))
+  await waitFor(() => bodies.length === 2)
+  assert.equal(bodies[1].status, 'Active', 'user change still re-fetches with the new value')
+  console.log('PASS 33: URL-restore hydration dispatches change without re-fetch; user changes still fetch')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

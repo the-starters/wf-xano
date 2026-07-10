@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.15.1 — 2026-07-10
+
+### Fixed
+
+- **URL-restore now repaints Webflow custom radio/checkbox faces** — `hydrateControls`
+  dispatches a bubbling `change` event whenever it flips a control's checked state, so
+  Webflow's forms JS (`w--redirected-checked`) and page tab scripts (e.g. `data-tab-filters-*`
+  embeds) resync their visuals. Previously a `?list_field=value` deep link left the
+  Designer-default option looking selected alongside the real one. wf-xano's own change
+  listener skips these hydration events, so no extra fetch is triggered.
+- **Scalar 200 bodies error instead of rendering a phantom card** — a bare string/number
+  response (e.g. a backend `debug.stop` message with HTTP 200) previously normalized into a
+  single item whose binds were all empty and whose null `status` satisfied negative
+  `wf-xano-if` conditions. `normalize()` now throws, surfacing the standard error state.
+  Single-object responses still render as one row.
+
 ## v0.15.0 — 2026-07-09
 
 ### Added
