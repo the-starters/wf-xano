@@ -1,6 +1,6 @@
 {
   "name": "@the-starters/wf-xano",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "description": "Declarative Xano list binder for Webflow — attribute-driven, state-heavy lists rendered straight from Xano endpoints.",
   "main": "wf-xano.js",
   "files": [
