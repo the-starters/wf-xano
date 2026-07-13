@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.15.1'
+  var VERSION = '0.15.2'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -461,7 +461,14 @@
     // image src binds
     qaWithRoot(card, '[wf-xano-src]').forEach(function (el) {
       var v = get(item, el.getAttribute('wf-xano-src'))
-      if (v != null && v !== '') el.setAttribute('src', String(v))
+      if (v != null && v !== '') {
+        // Webflow responsive images and Memberstack avatars can leave a
+        // low-resolution srcset on the template. Once Xano supplies the
+        // authoritative image, remove that stale candidate so the browser
+        // cannot choose it instead of the newly-bound src.
+        el.removeAttribute('srcset')
+        el.setAttribute('src', String(v))
+      }
     })
     // conditionals (wf-xano-display mirrors wf-algolia-display; default clears inline style)
     qaWithRoot(card, '[wf-xano-if]').forEach(function (el) {

@@ -1173,4 +1173,30 @@ const FULL_PAGE1 = {
   console.log('PASS 33: URL-restore hydration dispatches change without re-fetch; user changes still fetch')
 }
 
+// ---------- Test 34: single-record image bind replaces stale responsive candidates ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="opp30:starter/profile/match-context" wf-xano-auth="none">
+      <img
+        wf-xano-element="template"
+        wf-xano-src="profile_photo"
+        src="https://example.test/memberstack-96.jpg"
+        srcset="https://example.test/memberstack-96.jpg 96w"
+      >
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes({
+    starter_id: 643,
+    profile_photo: 'https://x.example/vault/profile.jpg?tpl=large',
+  })
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'single profile record rendered')
+  const image = w.document.querySelector('[wf-xano-item]')
+  assert.equal(image.getAttribute('src'), 'https://x.example/vault/profile.jpg?tpl=large', 'Xano image becomes src')
+  assert.equal(image.hasAttribute('srcset'), false, 'stale low-resolution srcset removed')
+  console.log('PASS 34: single-record wf-xano-src replaces src and removes stale srcset')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
