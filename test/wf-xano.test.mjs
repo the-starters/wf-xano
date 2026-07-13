@@ -1199,4 +1199,35 @@ const FULL_PAGE1 = {
   console.log('PASS 34: single-record wf-xano-src replaces src and removes stale srcset')
 }
 
+// ---------- Test 35: image pipe fallbacks resolve left-to-right and preserve all-empty placeholders ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="opp30:starter/profile/me" wf-xano-auth="none">
+      <img
+        wf-xano-element="template"
+        wf-xano-src="profile_photo|profile-photo-xano|profile-photo"
+        src="https://example.test/placeholder.jpg"
+        srcset="https://example.test/placeholder-96.jpg 96w"
+      >
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes([
+    { id: 1, profile_photo: 'https://x.example/vault/canonical.jpg?tpl=large', 'profile-photo-xano': 'https://x.example/vault/legacy.jpg' },
+    { id: 2, profile_photo: '', 'profile-photo-xano': 'https://x.example/vault/fallback.jpg?tpl=large' },
+    { id: 3 },
+  ])
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 3), 'three image cases rendered')
+  const images = [...w.document.querySelectorAll('[wf-xano-item]')]
+  assert.equal(images[0].getAttribute('src'), 'https://x.example/vault/canonical.jpg?tpl=large', 'first non-blank field wins')
+  assert.equal(images[0].hasAttribute('srcset'), false, 'primary bind removes stale srcset')
+  assert.equal(images[1].getAttribute('src'), 'https://x.example/vault/fallback.jpg?tpl=large', 'blank primary falls through')
+  assert.equal(images[1].hasAttribute('srcset'), false, 'fallback bind removes stale srcset')
+  assert.equal(images[2].getAttribute('src'), 'https://example.test/placeholder.jpg', 'all-empty chain keeps placeholder src')
+  assert.equal(images[2].getAttribute('srcset'), 'https://example.test/placeholder-96.jpg 96w', 'all-empty chain keeps placeholder srcset')
+  console.log('PASS 35: wf-xano-src pipe fallbacks + all-empty placeholder preservation')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
