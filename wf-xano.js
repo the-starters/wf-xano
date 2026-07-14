@@ -374,9 +374,9 @@
 
   function memberstackSession() {
     var ms = window.$memberstackDom
-    if (!ms) return Promise.reject(new Error('Memberstack not available'))
+    if (!ms) return Promise.reject(Object.assign(new Error('Memberstack not available'), { auth: true }))
     return Promise.resolve(ms.getMemberCookie()).then(function (token) {
-      if (!token) throw new Error('No Memberstack session (member not logged in)')
+      if (!token) throw Object.assign(new Error('No Memberstack session (member not logged in)'), { auth: true })
       return String(token)
     })
   }
@@ -517,6 +517,10 @@
     })
   }
 
+  function isFavoriteAuthFailure(err) {
+    return !!(err && (err.auth || err.status === 401 || err.status === 403))
+  }
+
   function syncFavoriteControls(type, id, favorited, loading) {
     favoriteControls(document).forEach(function (el) {
       if (favoriteType(el) !== type || favoriteId(el) !== id) return
@@ -600,7 +604,7 @@
       })
       .catch(function (err) {
         delete _favoriteLoads[type]
-        if (err && (err.status === 401 || err.status === 403)) hideFavoriteControls(type)
+        if (isFavoriteAuthFailure(err)) hideFavoriteControls(type)
         favoriteEvent('wf-xano:favorite-error', { item_type: type, item_id: null, status: err && err.status })
         throw err
       })

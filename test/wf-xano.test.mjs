@@ -1716,4 +1716,22 @@ const FULL_PAGE1 = {
   console.log('PASS 49: post-boot injection hydrates when no controls exist at load')
 }
 
+// ---------- Test 50: logged-out visitor gets favorite controls hidden ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-x"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let errorDetail
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(null) } // logged out
+  w.document.addEventListener('wf-xano:favorite-error', (event) => { errorDetail = event.detail })
+  w.fetch = (url) => { throw new Error('no network call expected when logged out: ' + url) }
+  w.eval(LIB)
+  const button = w.document.querySelector('[wf-xano-element="favorite"]')
+  assert.ok(await waitFor(() => button.hidden === true), 'logged-out favorite control is hidden')
+  assert.ok(errorDetail && errorDetail.item_type === 'starter', 'logged-out hydration surfaces a safe error event')
+  console.log('PASS 50: logged-out visitor hides favorite controls without network calls')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
