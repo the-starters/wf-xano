@@ -1758,4 +1758,37 @@ const FULL_PAGE1 = {
   console.log('PASS 51: cached auth failure hides new cards without rechecking the session')
 }
 
+// ---------- Test 52: auth-failed refresh drops the stale set so later batches stay hidden ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-1"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let authOk = true
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano' })
+    if (url.endsWith('/ids')) return authOk ? makeRes({ ids: ['wf-1'] }) : makeRes(null, false, 401)
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  const first = w.document.querySelector('button')
+  assert.ok(await waitFor(() => first.classList.contains('is-wf-xano-favorited')), 'initial hydration marks the saved card')
+
+  authOk = false
+  await w.WfXano.favorites.refresh('starter').catch(() => {})
+  assert.ok(await waitFor(() => first.hidden === true), 'auth-failed refresh hides existing control')
+  assert.deepEqual(w.WfXano.favorites.ids('starter'), [], 'stale set is dropped on auth failure')
+
+  const card = w.document.createElement('article')
+  card.setAttribute('data-wf-algolia-hit-objectid', 'wf-1')
+  card.innerHTML = '<button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button>'
+  w.document.body.appendChild(card)
+  const injected = card.querySelector('button')
+  assert.ok(await waitFor(() => injected.hidden === true), 'batch injected after auth failure stays hidden')
+  assert.equal(injected.classList.contains('is-wf-xano-favorited'), false, 'no stale favorited state repainted on injected card')
+  console.log('PASS 52: auth-failed refresh clears the set so later cards are not un-hidden')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

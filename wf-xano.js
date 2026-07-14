@@ -609,6 +609,7 @@
         delete _favoriteLoads[type]
         if (isFavoriteAuthFailure(err)) {
           _favoriteAuthFailed[type] = true
+          delete _favoriteSets[type]
           hideFavoriteControls(type)
         }
         favoriteEvent('wf-xano:favorite-error', { item_type: type, item_id: null, status: err && err.status })
