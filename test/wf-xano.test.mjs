@@ -114,6 +114,56 @@ const FULL_PAGE1 = {
   console.log('PASS B: setParam/goToPage re-fetch, page reset, empty state')
 }
 
+// ---------- Test B2: replace-mode refetch clears stale items while the new fetch is in flight ----------
+{
+  const dom = new JSDOM(FULL_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  let releaseSecond
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push(JSON.parse(opts.body))
+    if (calls.length === 1) return makeRes(FULL_PAGE1) // initial: 2 items
+    // second load (filter change) stays pending until released, so we can
+    // inspect the DOM mid-flight
+    return new Promise((res) => {
+      releaseSecond = () =>
+        res({ ok: true, status: 200, json: () => Promise.resolve(PAGE([{ id: 99, title: 'New', description: '', published_at: '2026-06-30T00:00:00Z', status: 'Active', owner: 'X' }], 1)) })
+    })
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'initial 2 items')
+  const inst = w.document.querySelector('[wf-xano-list]').__wfXano
+  inst.setParam('status', 'Closed') // replace-mode refetch; fetch left pending
+  assert.ok(await waitFor(() => calls.length === 2), 'second fetch issued')
+  // The whole point: stale items are gone AND the loader is up WHILE the new
+  // request is still in flight (previously they lingered until it resolved).
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 0, 'stale items cleared during in-flight replace load')
+  assert.notEqual(w.document.querySelector('[wf-xano-loader]').style.display, 'none', 'loader shown during in-flight load')
+  releaseSecond()
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'new item renders once fetch resolves')
+  assert.equal(w.document.querySelector('[wf-xano-loader]').style.display, 'none', 'loader hidden after render')
+  console.log('PASS B2: replace-mode refetch clears stale items while loading')
+}
+
+// ---------- Test B3: append-mode load keeps prior items in place ----------
+{
+  const dom = new JSDOM(FULL_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push(JSON.parse(opts.body))
+    return makeRes(PAGE([{ id: 400 + calls.length, title: 'Row ' + calls.length, description: '', published_at: '2026-06-30T00:00:00Z', status: 'Active', owner: 'X' }], 5, calls.length, 5))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'initial 1 item')
+  const inst = w.document.querySelector('[wf-xano-list]').__wfXano
+  inst.load({ append: true }) // append mode must NOT clear existing items
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'append keeps prior item and adds the new one')
+  console.log('PASS B3: append-mode load keeps prior items')
+}
+
 // ---------- Test C: pure helpers ----------
 {
   const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })

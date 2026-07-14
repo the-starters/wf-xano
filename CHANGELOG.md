@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.16.1 — 2026-07-14
+
+### Fixed
+
+- **Replace-mode loads no longer flash stale items under the loader** — on a
+  filter/tab/page change or `refresh()`, `load()` now removes the previous page's
+  rendered items the moment it enters the loading state, instead of leaving them
+  visible until the new fetch resolves and `render()` swaps them. During the
+  in-flight request only the loader shows. Append loads (load-more / infinite /
+  `all` mode) still keep prior items by design, and the empty state is still left
+  to `render()` so a currently-empty feed doesn't flicker its "no results" block.
+
 ## v0.15.1 — 2026-07-10
 
 ### Fixed
