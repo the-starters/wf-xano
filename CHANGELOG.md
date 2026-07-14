@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.16.3 — 2026-07-14
+
+### Added
+
+- **`wf-xano-prefix` / `wf-xano-suffix`** — wrap a non-blank bound display value
+  with literal text, e.g. `<span wf-xano-bind="budget_frequency" wf-xano-prefix=" / ">`
+  renders `Budget: 12414 / month`. Lets adjacent binds join with a separator
+  without relying on source whitespace (which Webflow strips between inline
+  elements). Skipped when the value is blank, so an empty field never leaves a
+  dangling separator. Applies to text binds only — form-value binds
+  (input/textarea/select) take the raw value so filters/submits aren't corrupted.
+
 ## v0.16.2 — 2026-07-14
 
 ### Fixed

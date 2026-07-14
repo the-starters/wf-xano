@@ -1312,4 +1312,33 @@ const FULL_PAGE1 = {
   console.log('PASS 35: wf-xano-src pipe fallbacks + all-empty placeholder preservation')
 }
 
+// ---------- Test 36: wf-xano-prefix / wf-xano-suffix wrap non-blank display values ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="10">
+      <div wf-xano-element="template">
+        <span class="budget" wf-xano-bind="budget"></span><span class="freq" wf-xano-bind="budget_frequency" wf-xano-prefix=" / "></span>
+        <span class="wrapped" wf-xano-bind="budget" wf-xano-prefix="$" wf-xano-suffix=" USD"></span>
+        <input class="filter" wf-xano-bind="budget_frequency" wf-xano-prefix=" / ">
+      </div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+      <div wf-xano-element="loader">loading</div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([
+    { id: 1, budget: '12414', budget_frequency: 'month' },
+    { id: 2, budget: '9999', budget_frequency: '' }, // blank frequency -> no dangling " / "
+  ], 2))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'two cards rendered')
+  const cards = [...w.document.querySelectorAll('[wf-xano-item]')]
+  assert.equal(cards[0].querySelector('.freq').textContent, ' / month', 'prefix joins a non-blank frequency')
+  assert.equal(cards[0].querySelector('.wrapped').textContent, '$12414 USD', 'prefix + suffix both wrap')
+  assert.equal(cards[1].querySelector('.freq').textContent, '', 'blank value gets no prefix (no dangling separator)')
+  assert.equal(cards[0].querySelector('input.filter').value, 'month', 'form-value binds ignore prefix/suffix')
+  console.log('PASS 36: wf-xano-prefix/suffix wrap non-blank text binds, skip blanks and form values')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
