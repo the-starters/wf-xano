@@ -1341,4 +1341,29 @@ const FULL_PAGE1 = {
   console.log('PASS 36: wf-xano-prefix/suffix wrap non-blank text binds, skip blanks and form values')
 }
 
+// ---------- Test 37: wf-xano-format lowercase/uppercase/capitalize (+ prefix compose) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="10">
+      <div wf-xano-element="template">
+        <span class="lower" wf-xano-bind="budget_frequency" wf-xano-prefix=" / " wf-xano-format="lowercase"></span>
+        <span class="upper" wf-xano-bind="budget_frequency" wf-xano-format="uppercase"></span>
+        <span class="cap" wf-xano-bind="title" wf-xano-format="capitalize"></span>
+      </div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+      <div wf-xano-element="loader">loading</div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, budget_frequency: 'Once', title: 'sENIOR gROWTH' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'card rendered')
+  const card = w.document.querySelector('[wf-xano-item]')
+  assert.equal(card.querySelector('.lower').textContent, ' / once', 'lowercase applies before the prefix is prepended')
+  assert.equal(card.querySelector('.upper').textContent, 'ONCE', 'uppercase transforms the value')
+  assert.equal(card.querySelector('.cap').textContent, 'Senior growth', 'capitalize: first char up, rest lower')
+  console.log('PASS 37: wf-xano-format lowercase/uppercase/capitalize compose with prefix')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

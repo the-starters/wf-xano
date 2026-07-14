@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16.4 — 2026-07-14
+
+### Added
+
+- **`wf-xano-format` case transforms: `lowercase`, `uppercase`, `capitalize`**
+  (first char up, rest lower). e.g. `wf-xano-format="lowercase"` renders a
+  legacy-capitalized `Once` as `once`. Composes with `wf-xano-prefix`/`suffix`
+  (the case transform runs first, then the prefix/suffix wrap), so
+  `wf-xano-prefix=" / " wf-xano-format="lowercase"` on a `budget_frequency`
+  bind renders ` / once`.
+
 ## v0.16.3 — 2026-07-14
 
 ### Added

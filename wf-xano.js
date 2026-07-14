@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.16.3'
+  var VERSION = '0.16.4'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -236,8 +236,9 @@
 
   /** Optional value formatting via wf-xano-format. Date styles:
    *  `date` (locale short, e.g. 5/21/2026), `date-medium` / `date-long`
-   *  ("May 21, 2026"), `datetime`, `datetime-long`. Also `short-name`, else
-   *  the raw value. */
+   *  ("May 21, 2026"), `datetime`, `datetime-long`. Also `short-name`,
+   *  `lowercase`, `uppercase`, `capitalize` (first letter up, rest lower),
+   *  else the raw value. */
   function fmt(value, kind) {
     // Guard empties AND the Unix epoch (0 / "0") — Xano stores unset
     // timestamps as 0, which would otherwise render as "1/1/1970".
@@ -264,6 +265,12 @@
           }),
         )
         .join(' ')
+    }
+    if (kind === 'lowercase') return String(value).toLowerCase()
+    if (kind === 'uppercase') return String(value).toUpperCase()
+    if (kind === 'capitalize') {
+      var s = String(value)
+      return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
     }
     return String(value)
   }
