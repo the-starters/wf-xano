@@ -1734,4 +1734,28 @@ const FULL_PAGE1 = {
   console.log('PASS 50: logged-out visitor hides favorite controls without network calls')
 }
 
+// ---------- Test 51: logged-out auth failure is cached — later card batches hide without rechecking the session ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-1"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let cookieCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => { cookieCalls++; return Promise.resolve(null) } } // logged out
+  w.fetch = (url) => { throw new Error('no network call expected when logged out: ' + url) }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('button').hidden === true), 'first logged-out control is hidden')
+  const callsAfterBoot = cookieCalls
+  assert.ok(callsAfterBoot >= 1, 'first hydration checks the session once')
+
+  const card = w.document.createElement('article')
+  card.setAttribute('data-wf-algolia-hit-objectid', 'wf-2')
+  card.innerHTML = '<button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button>'
+  w.document.body.appendChild(card)
+  assert.ok(await waitFor(() => card.querySelector('button').hidden === true), 'later-injected control is hidden too')
+  assert.equal(cookieCalls, callsAfterBoot, 'cached auth failure short-circuits — no session recheck per injected batch')
+  console.log('PASS 51: cached auth failure hides new cards without rechecking the session')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

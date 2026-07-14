@@ -464,6 +464,7 @@
   var _favoriteSets = {} // item type -> Set<string>
   var _favoriteLoads = {} // item type -> Promise<Set<string>>
   var _favoriteToggles = {} // "type:id" -> Promise
+  var _favoriteAuthFailed = {} // item type -> true once hydration hit an auth failure
   var _favoriteSession = null
   var _favoriteObserver = null
 
@@ -511,8 +512,8 @@
     favoriteLabels(el, !!favorited)
   }
 
-  function hideFavoriteControls(type) {
-    favoriteControls(document).forEach(function (el) {
+  function hideFavoriteControls(type, scope) {
+    favoriteControls(scope || document).forEach(function (el) {
       if (!type || favoriteType(el) === type) el.hidden = true
     })
   }
@@ -542,6 +543,7 @@
     _favoriteSets = {}
     _favoriteLoads = {}
     _favoriteToggles = {}
+    _favoriteAuthFailed = {}
     favoriteControls(document).forEach(function (el) {
       var type = favoriteType(el)
       var id = favoriteId(el)
@@ -599,12 +601,16 @@
         if (!Array.isArray(ids)) throw new Error('wf-xano favorite ids returned an invalid response')
         var set = new Set(ids.map(String))
         _favoriteSets[type] = set
+        delete _favoriteAuthFailed[type]
         paintFavoriteControls(document)
         return set
       })
       .catch(function (err) {
         delete _favoriteLoads[type]
-        if (isFavoriteAuthFailure(err)) hideFavoriteControls(type)
+        if (isFavoriteAuthFailure(err)) {
+          _favoriteAuthFailed[type] = true
+          hideFavoriteControls(type)
+        }
         favoriteEvent('wf-xano:favorite-error', { item_type: type, item_id: null, status: err && err.status })
         throw err
       })
@@ -680,6 +686,10 @@
       if (type) types[type] = true
     })
     Object.keys(types).forEach(function (type) {
+      if (_favoriteAuthFailed[type]) {
+        hideFavoriteControls(type, scope)
+        return
+      }
       ensureFavoriteType(type).catch(function () {
         /* surfaced through the DOM event; keep page boot non-fatal */
       })
