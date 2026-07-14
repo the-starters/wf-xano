@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.16.2'
+  var VERSION = '0.16.3'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -455,8 +455,23 @@
         }
       }
       var value = fmt(raw, el.getAttribute('wf-xano-format'))
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) el.value = value
-      else el.textContent = value
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
+        // Form-value binds take the raw formatted value — prefix/suffix are a
+        // display affordance and would corrupt a submitted/filter value.
+        el.value = value
+      } else {
+        // wf-xano-prefix / wf-xano-suffix wrap a non-blank display value with
+        // literal text (e.g. wf-xano-prefix=" / " to join an adjacent bind
+        // without relying on fragile source whitespace). Skipped when blank so
+        // an empty field never leaves a dangling separator.
+        if (value !== '') {
+          var pre = el.getAttribute('wf-xano-prefix')
+          var suf = el.getAttribute('wf-xano-suffix')
+          if (pre) value = pre + value
+          if (suf) value = value + suf
+        }
+        el.textContent = value
+      }
     })
     // image src binds
     qaWithRoot(card, '[wf-xano-src]').forEach(function (el) {
