@@ -230,7 +230,7 @@ const FULL_PAGE1 = {
     getMemberCookie: () => Promise.resolve('ms-jwt-' + memberId),
   }
   w.fetch = (url, opts) => {
-    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token-' + memberId) }
+    if (/\/trade(?:\?|$)/.test(url)) { tradeCalls++; return makeRes('xano-token-' + memberId) }
     authHeaders.push(opts.headers.Authorization)
     return makeRes(PAGE([], 0))
   }
@@ -248,7 +248,7 @@ const FULL_PAGE1 = {
   console.log('PASS D: memberstack auth header, token caching + member-change reset')
 }
 
-// ---------- Test D2: localStorage member-id fast path (no getCurrentMember network call) ----------
+// ---------- Test D2: auth never requires a member-profile lookup; cookie switch resets token ----------
 {
   const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
   const w = dom.window
@@ -264,41 +264,41 @@ const FULL_PAGE1 = {
     getMemberCookie: () => Promise.resolve('ms-jwt-' + memberId),
   }
   w.fetch = (url, opts) => {
-    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token-' + memberId) }
+    if (/\/trade(?:\?|$)/.test(url)) { tradeCalls++; return makeRes('xano-token-' + memberId) }
     authHeaders.push(opts.headers.Authorization)
     return makeRes(PAGE([], 0))
   }
   w.eval(LIB)
   await waitFor(() => authHeaders.length === 1)
-  assert.equal(getCurrentMemberCalls, 0, 'localStorage id short-circuits the getCurrentMember network call')
+  assert.equal(getCurrentMemberCalls, 0, 'auth never calls getCurrentMember')
   assert.equal(authHeaders[0], 'Bearer xano-token-mem_LS_A', 'traded token used as Bearer')
   const inst = w.document.querySelector('[wf-xano-list]').__wfXano
   await inst.refresh()
   assert.equal(tradeCalls, 1, 'token cached across refresh for same member')
-  // An account switch lands in Memberstack's localStorage cache -> token dropped.
+  // An account switch changes the live session cookie -> token dropped.
   memberId = 'mem_LS_B'
   w.localStorage.setItem('_ms-mid', 'mem_LS_B') // unquoted variant must parse too
   await inst.refresh()
   await waitFor(() => tradeCalls === 2)
   assert.equal(authHeaders[authHeaders.length - 1], 'Bearer xano-token-mem_LS_B', 'member switch re-trades')
   assert.equal(getCurrentMemberCalls, 0, 'switch detected without any getCurrentMember call')
-  console.log('PASS D2: localStorage member-id fast path + switch reset')
+  console.log('PASS D2: profile-free auth + live-session switch reset')
 }
 
-// ---------- Test D3: getCurrentMember fallback runs in PARALLEL — never gates first render ----------
+// ---------- Test D3: getCurrentMember is never consulted and cannot gate first render ----------
 {
   const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
   const w = dom.window
   w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
-  // Empty localStorage and a getCurrentMember that NEVER resolves: the old
-  // serial chain would hang before trading; the parallel one must render.
+  // A getCurrentMember that NEVER resolves cannot hang auth because the
+  // library does not need a profile lookup to trade the live session cookie.
   w.WfXanoConfig = { authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
   w.$memberstackDom = {
     getCurrentMember: () => new Promise(() => {}),
     getMemberCookie: () => Promise.resolve('ms-jwt'),
   }
   w.fetch = (url) => {
-    if (/\/trade\?/.test(url)) return makeRes('xano-token')
+    if (/\/trade(?:\?|$)/.test(url)) return makeRes('xano-token')
     return makeRes(PAGE([{ id: 1, title: 'Fast' }], 1))
   }
   w.eval(LIB)
@@ -306,7 +306,7 @@ const FULL_PAGE1 = {
     await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1),
     'first authed render not gated behind getCurrentMember',
   )
-  console.log('PASS D3: member-id fallback concurrent with trade (no serial gate)')
+  console.log('PASS D3: member-profile lookup cannot gate auth')
 }
 
 // ---------- Test D4: preAuth pre-warms the trade at parse time (and preAuth:false does not) ----------
@@ -322,7 +322,7 @@ const FULL_PAGE1 = {
     getMemberCookie: () => Promise.resolve('ms-jwt'),
   }
   w.fetch = (url, opts) => {
-    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token') }
+    if (/\/trade(?:\?|$)/.test(url)) { tradeCalls++; return makeRes('xano-token') }
     listCalls.push(opts)
     return makeRes(PAGE([], 0))
   }
@@ -339,7 +339,7 @@ const FULL_PAGE1 = {
     getCurrentMember: () => Promise.resolve({ data: { id: 'mem_A' } }),
     getMemberCookie: () => Promise.resolve('ms-jwt'),
   }
-  w2.fetch = (url) => { if (/\/trade\?/.test(url)) tradeCalls2++; return makeRes(PAGE([], 0)) }
+  w2.fetch = (url) => { if (/\/trade(?:\?|$)/.test(url)) tradeCalls2++; return makeRes(PAGE([], 0)) }
   w2.eval(LIB)
   await new Promise((r) => setTimeout(r, 40))
   assert.equal(tradeCalls2, 0, 'preAuth:false skips the pre-warm')
@@ -360,7 +360,7 @@ const FULL_PAGE1 = {
     getMemberCookie: () => Promise.resolve(cookie),
   }
   w.fetch = (url, opts) => {
-    if (/\/trade\?/.test(url)) { tradeCalls++; return makeRes('xano-token') }
+    if (/\/trade(?:\?|$)/.test(url)) { tradeCalls++; return makeRes('xano-token') }
     authHeaders.push(opts.headers.Authorization)
     return makeRes(PAGE([], 0))
   }
@@ -988,7 +988,7 @@ const FULL_PAGE1 = {
   assert.equal(times[1], 'May 21, 2026', 'falls back to published_at when last_edited_at is 0')
   assert.equal(times[2], 'January 3, 2026', 'falls through to created_at when published_at also blank')
   assert.equal(times[3], '', 'all-blank -> empty')
-  assert.equal(w.WfXano._internal.isBlank(0), true, 'isBlank(0)')
+  assert.equal(w.WfXano._internal.isBlank(0), false, 'numeric zero is legitimate data outside date formatting')
   assert.equal(w.WfXano._internal.isBlank(1782894318555), false, 'isBlank(real ts) false')
   console.log('PASS 26: wf-xano-fallback chain')
 }
@@ -1364,6 +1364,212 @@ const FULL_PAGE1 = {
   assert.equal(card.querySelector('.upper').textContent, 'ONCE', 'uppercase transforms the value')
   assert.equal(card.querySelector('.cap').textContent, 'Senior growth', 'capitalize: first char up, rest lower')
   console.log('PASS 37: wf-xano-format lowercase/uppercase/capitalize compose with prefix')
+}
+
+// ---------- Test 38: wf-xano-default — literal shown when missing; real zero stays data ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none">
+      <div wf-xano-element="template">
+        <span class="count" wf-xano-bind="applicants" wf-xano-default="0"></span>
+        <span class="chained" wf-xano-bind="applicants" wf-xano-fallback="applicant_count" wf-xano-default="0"></span>
+        <span class="wrapped" wf-xano-bind="applicants" wf-xano-default="0" wf-xano-suffix=" applicants"></span>
+        <span class="present" wf-xano-bind="applicants" wf-xano-default="0"></span>
+        <input class="field" wf-xano-bind="applicants" wf-xano-default="0" />
+      </div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+      <div wf-xano-element="loader">loading</div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { debug: false }
+  w.fetch = () => makeRes(PAGE([
+    { id: 1, applicants: 0, applicant_count: 9 },    // real 0 must beat fallback/default
+    { id: 2, applicants: null, applicant_count: 7 }, // fallback field wins over default
+    { id: 3, applicants: 12 },                       // real value untouched
+  ], 3))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 3), 'cards rendered')
+  const cards = [...w.document.querySelectorAll('[wf-xano-item]')]
+  assert.equal(cards[0].querySelector('.count').textContent, '0', 'count of 0 renders as real data')
+  assert.equal(cards[0].querySelector('.chained').textContent, '0', 'real zero beats fallback and default')
+  assert.equal(cards[0].querySelector('.wrapped').textContent, '0 applicants', 'zero composes with suffix')
+  assert.equal(cards[0].querySelector('.field').value, '0', 'input preserves numeric zero')
+  assert.equal(cards[1].querySelector('.chained').textContent, '7', 'wf-xano-fallback field beats the literal default')
+  assert.equal(cards[2].querySelector('.present').textContent, '12', 'non-blank value ignores the default')
+  console.log('PASS 38: wf-xano-default for missing values; zero remains data')
+}
+
+// ---------- Test 39: append failure preserves accumulated cards and retries the same page ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-load="more">
+      <div wf-xano-element="list"><div wf-xano-element="template"><span wf-xano-bind="title"></span></div></div>
+      <button wf-xano-element="load-more">More</button><div wf-xano-element="error" style="display:none">error</div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  const requestedPages = []
+  let failPage2 = true
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    const page = JSON.parse(opts.body).page
+    requestedPages.push(page)
+    if (page === 2 && failPage2) {
+      failPage2 = false
+      return makeRes({ message: 'temporary' }, false, 503)
+    }
+    return makeRes({ items: [{ id: page, title: 'Page ' + page }], curPage: page, nextPage: page < 2 ? page + 1 : null })
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'page 1 rendered')
+  const inst = w.WfXano.instances[0]
+  await inst.loadNext()
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 1, 'failed append preserves page 1')
+  assert.equal(inst.page, 1, 'failed append rolls page state back')
+  await inst.loadNext()
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'retry appends page 2')
+  assert.deepEqual(requestedPages, [1, 2, 2], 'retry requests the failed page again')
+  console.log('PASS 39: append failure recovery preserves and retries')
+}
+
+// ---------- Test 40: URL sync allowlists controls and never serializes static params ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="jobs" wf-xano-source="g:p" wf-xano-auth="none"
+      wf-xano-url-sync="true" wf-xano-param-scope="private">
+      <input wf-xano-filter="status"><div wf-xano-element="template"></div>
+    </div></body></html>`, { runScripts: 'outside-only', url: 'https://x.test/?jobs_status=Open&jobs_scope=attacker&jobs_admin=true' })
+  const w = dom.window
+  let body
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => { body = JSON.parse(opts.body); return makeRes(PAGE([], 0)) }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => body), 'request sent')
+  assert.equal(body.status, 'Open', 'declared control restores from URL')
+  assert.equal(body.scope, 'private', 'URL cannot overwrite static params')
+  assert.equal(body.admin, undefined, 'undeclared URL field is ignored')
+  assert.ok(!w.location.search.includes('jobs_scope='), 'static params are not serialized')
+  assert.ok(!w.location.search.includes('jobs_admin='), 'unknown prefixed params are removed')
+  console.log('PASS 40: URL state allowlist + static-param protection')
+}
+
+// ---------- Test 41: token trade uses POST body and session-cookie changes invalidate cache ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+  let cookie = 'jwt-a'
+  const trades = []
+  const authHeaders = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = {
+    getCurrentMember: () => Promise.resolve({ data: { id: 'same-local-id' } }),
+    getMemberCookie: () => Promise.resolve(cookie),
+  }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/trade')) {
+      trades.push({ url, opts })
+      return makeRes({ authToken: 'xano-' + JSON.parse(opts.body).token })
+    }
+    authHeaders.push(opts.headers.Authorization)
+    return makeRes(PAGE([], 0))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => authHeaders.length === 1), 'initial authed request')
+  assert.equal(trades[0].opts.method, 'POST')
+  assert.equal(trades[0].opts.cache, 'no-store')
+  assert.ok(!trades[0].url.includes(cookie), 'JWT is absent from URL')
+  cookie = 'jwt-b'
+  await w.WfXano.instances[0].refresh()
+  assert.equal(trades.length, 2, 'cookie change retrades even when member id is unchanged')
+  assert.equal(authHeaders.at(-1), 'Bearer xano-jwt-b')
+  console.log('PASS 41: secure token POST + session-fingerprint invalidation')
+}
+
+// ---------- Test 42: GET avoids JSON preflight header; unsafe bound protocols are blocked ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="https://x.example/list" wf-xano-method="GET" wf-xano-auth="none">
+      <a wf-xano-element="template" wf-xano-link="url"><img wf-xano-src="image"></a>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  let request
+  w.WfXanoConfig = { debug: false }
+  w.fetch = (url, opts) => {
+    request = opts
+    return makeRes(PAGE([{ id: 1, url: 'javascript:alert(1)', image: 'data:text/html,bad' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'card rendered')
+  const card = w.document.querySelector('[wf-xano-item]')
+  assert.equal(request.headers['Content-Type'], undefined, 'GET omits JSON content type')
+  assert.equal(card.hasAttribute('href'), false, 'unsafe href removed')
+  assert.equal(card.querySelector('img').hasAttribute('src'), false, 'unsafe image src removed')
+  console.log('PASS 42: simple GET headers + URL protocol guard')
+}
+
+// ---------- Test 43: lifecycle scoping handles scope roots, descendants, invalid wrappers, nested lists ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div id="invalid" wf-xano-element="wrapper" wf-xano-source="g:bad"></div>
+    <div id="outer" wf-xano-element="wrapper" wf-xano-source="g:outer" wf-xano-auth="none">
+      <div class="outer-template" wf-xano-element="template"><span wf-xano-bind="title"></span></div>
+      <div id="inner" wf-xano-element="wrapper" wf-xano-source="g:inner" wf-xano-auth="none">
+        <div class="inner-template" wf-xano-element="template"><span wf-xano-bind="title"></span></div>
+      </div>
+    </div>
+    <div id="dynamic" wf-xano-element="wrapper" wf-xano-source="g:dynamic" wf-xano-auth="none">
+      <div wf-xano-element="template"></div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => { calls.push(url); return makeRes(PAGE([{ id: 1, title: url.includes('inner') ? 'Inner' : 'Outer' }], 1)) }
+  // Hold dynamic out of initial discovery, then initialize the element itself.
+  const dynamic = w.document.querySelector('#dynamic')
+  dynamic.remove()
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.WfXano.instances.length === 2), 'only valid outer/inner instances registered')
+  assert.equal(w.document.querySelector('#invalid').__wfXano, undefined, 'invalid wrapper not registered')
+  assert.equal(w.document.querySelectorAll('#outer > [wf-xano-item]').length, 1, 'outer owns exactly its direct card')
+  assert.equal(w.document.querySelectorAll('#inner > [wf-xano-item]').length, 1, 'inner owns exactly its direct card')
+  w.document.body.appendChild(dynamic)
+  w.WfXano.init(dynamic)
+  assert.ok(dynamic.__wfXano, 'init(scopeRoot) initializes the root itself')
+  const before = calls.length
+  await w.WfXano.refresh(dynamic.querySelector('[wf-xano-element="template"]'))
+  assert.equal(calls.length, before + 1, 'refresh(descendant) targets only its owning instance')
+  console.log('PASS 43: lifecycle and nested-instance scoping')
+}
+
+// ---------- Test 44: infinite mode observes a dedicated tail sentinel and keeps it after cards ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-load="infinite">
+      <div wf-xano-element="list"><div wf-xano-element="template"><span wf-xano-bind="title"></span></div></div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  let observerCallback
+  let observed
+  w.IntersectionObserver = class {
+    constructor(cb) { observerCallback = cb }
+    observe(el) { observed = el }
+    disconnect() {}
+  }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    const page = JSON.parse(opts.body).page
+    return makeRes({ items: [{ id: page, title: 'Page ' + page }], curPage: page, nextPage: page < 2 ? 2 : null })
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'first page rendered')
+  assert.ok(observed && observed.hasAttribute('data-wf-xano-sentinel'), 'observer watches dedicated sentinel')
+  assert.equal(observed.previousElementSibling.hasAttribute('wf-xano-item'), true, 'sentinel remains after rendered cards')
+  observerCallback([{ isIntersecting: true }])
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'intersection appends next page')
+  assert.equal(observed.previousElementSibling.getAttribute('data-wf-xano-id'), '2', 'moving tail remains after newest card')
+  console.log('PASS 44: infinite tail sentinel')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

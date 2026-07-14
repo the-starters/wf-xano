@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wf-xano · authenticated list example</title>
+    <style>
+      body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 0; background: #f5f5f3; color: #23281f; }
+      .wrap { max-width: 680px; margin: 40px auto; padding: 0 20px; }
+      h1 { font-size: 22px; margin-bottom: 4px; }
+      .note { color: #66705e; margin-top: 0; }
+      .project { background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 16px 18px; margin: 10px 0; }
+      .project h2 { font-size: 16px; margin: 0 0 4px; }
+      .project p, .state { color: #66705e; margin: 0; }
+      .state { padding: 16px 0; }
+      .is-wf-xano-loading [wf-xano-element="list"] { opacity: .55; }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Your projects</h1>
+      <p class="note">This page mocks Memberstack and Xano locally. View source to see the full auth flow.</p>
+
+      <div wf-xano-element="wrapper" wf-xano-source="dashboard:member/projects/list" wf-xano-per-page="10">
+        <div wf-xano-element="list">
+          <article wf-xano-element="template" class="project">
+            <h2 wf-xano-bind="name" wf-xano-default="Untitled project"></h2>
+            <p>Created <span wf-xano-bind="created_at" wf-xano-format="date-medium"></span></p>
+          </article>
+        </div>
+        <div class="state" wf-xano-element="loader">Loading your projects…</div>
+        <div class="state" wf-xano-element="empty" style="display:none">You have no projects yet.</div>
+        <div class="state" wf-xano-element="error" style="display:none">Your projects could not be loaded.</div>
+      </div>
+    </main>
+
+    <script>
+      // Demo-only Memberstack + backend mocks. A real page loads memberstack-x instead.
+      window.$memberstackDom = {
+        getMemberCookie: function () { return Promise.resolve('demo-memberstack-jwt') }
+      }
+
+      var nativeFetch = window.fetch
+      window.fetch = function (url, options) {
+        options = options || {}
+        if (String(url).endsWith('/auth/trade-token/v3')) {
+          var tradeBody = JSON.parse(options.body || '{}')
+          var validTrade = options.method === 'POST' && tradeBody.token === 'demo-memberstack-jwt'
+          return Promise.resolve({
+            ok: validTrade,
+            status: validTrade ? 200 : 401,
+            json: function () { return Promise.resolve(validTrade ? { authToken: 'demo-xano-token' } : { message: 'Invalid session' }) }
+          })
+        }
+        if (String(url).includes('/api:dashboard/member/projects/list')) {
+          var authorized = options.headers && options.headers.Authorization === 'Bearer demo-xano-token'
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve({
+                ok: authorized,
+                status: authorized ? 200 : 401,
+                json: function () { return Promise.resolve(authorized ? {
+                  items: [
+                    { id: 1, name: 'Brand refresh', created_at: 1783641600000 },
+                    { id: 2, name: 'Summer campaign', created_at: 1784851200000 }
+                  ],
+                  itemsTotal: 2,
+                  curPage: 1,
+                  pageTotal: 1
+                } : { message: 'Unauthorized' }) }
+              })
+            }, 300)
+          })
+        }
+        return nativeFetch(url, options)
+      }
+
+      window.WfXanoConfig = {
+        xanoBase: 'https://demo.xano.io',
+        authBase: 'https://demo.xano.io/api:auth',
+        debug: true
+      }
+    </script>
+    <script src="../wf-xano.js"></script>
+  </body>
+</html>

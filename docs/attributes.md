@@ -4,6 +4,9 @@ Everything wf-xano does is driven by HTML attributes — no code required. This 
 element/setting split used by [Finsweet Attributes](https://finsweet.com/attributes): **Elements**
 define *what a node is*, **Settings** tune *how it behaves*.
 
+New to wf-xano? Start with the [usage guide](usage.md) for complete public and authenticated
+examples, then use this page as the exhaustive reference.
+
 - [Elements](#elements)
 - [Settings](#settings)
 - [Scoping & instance keys](#scoping--instance-keys)
@@ -38,10 +41,11 @@ These work on any descendant of the template **and on the template root itself**
 | Attribute | Value | Description |
 | --- | --- | --- |
 | `wf-xano-bind` | field name | Sets the element's text (or `value` for inputs/selects/textareas). Supports dot paths for joined records: `brand.company_name`. |
-| `wf-xano-fallback` | field name(s) | On a `wf-xano-bind` element: when the bound field is blank (`null`/`""`/`0`/`"0"`), bind the first non-blank field from this comma-separated list instead. E.g. `wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at"` → shows the edit date, or the publish date, or the created date. |
+| `wf-xano-fallback` | field name(s) | On a `wf-xano-bind` element: when the bound field is missing (`null`/`""`), bind the first non-missing field from this comma-separated list instead. For date formats only, Xano's unset epoch `0` is also skipped. E.g. `wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at"` → shows the edit date, or the publish date, or the created date. |
+| `wf-xano-default` | literal text | Rendered when the value is still missing after `wf-xano-fallback` fields. Real `0`/`"0"` values render directly and beat fallbacks/defaults. A default is a real display value, so `wf-xano-prefix`/`wf-xano-suffix` still wrap it (v0.16.5+; zero semantics corrected in v0.17.0). |
 | `wf-xano-src` | field name(s) | Sets an `<img>`'s `src`. Supports a pipe-separated fallback chain and uses the first non-blank field, e.g. `profile_photo\|profile-photo-xano\|profile-photo`. When a value is bound, any stale `srcset` from Webflow responsive images or a placeholder provider is removed so the browser uses the authoritative Xano image. If every field is blank, the template's placeholder `src`/`srcset` remains unchanged. |
 | `wf-xano-if` | expression | Shows/hides the element per item: `status === 'Active'`, `budget >= 100`, `applied` (truthy). Operators: `===` `!==` `>` `>=` `<` `<=`. **Logical combos:** `\|` = OR, `&` = AND (`\|\|`/`&&` also fine), e.g. `last_edited_at \| created_at` (show if either present) or `status === 'Active' & applied === false`. AND binds tighter than OR. |
-| `wf-xano-link` | field name | Builds the `href` from the field value. Works when the card root is the `<a>` itself. |
+| `wf-xano-link` | field name | Builds the `href` from the field value. Works when the card root is the `<a>` itself. Unsafe protocols such as `javascript:` and `data:` are rejected. |
 | `wf-xano-element="show-more"` | — | A clickable that expands a CSS-clamped text element by removing its clamp class (v0.13.0+). Works both inside list cards **and standalone on any page** — static CMS / detail pages, or content bound by another script such as opportunities-3.0.js (v0.14.0+). `wf-xano-target="<field>"` names the field to expand, matched against **both `wf-xano-bind` and `data-opp-bind`**; if it doesn't resolve (or is omitted) the target falls back to the nearest element carrying the `wf-xano-class` clamp class, then any bound element. `wf-xano-class="<class>"` is the clamp utility class removed while expanded and restored on collapse (e.g. `text-style-5lines`); on standalone pages the clamp class is what identifies the target. It accepts **multiple classes and `*` globs** (space-separated) — e.g. `text-style-*line*` strips every matching clamp on the target, so an element with both a desktop and a `-mob` clamp (`text-style-5lines text-style-2lines-mob`) fully expands on both breakpoints (v0.15.0+). Optional `wf-xano-expanded-text="Show less"` swaps the label while expanded — on composite buttons (label + icon children) mark the label child with `wf-xano-element="show-more-text"` so the swap writes there and icons survive (v0.13.1+). Mark icon children with `wf-xano-element="show-more-icon"` to have `is-wf-xano-expanded` toggled on them too — style the rotated state as a combo class on the icon itself (v0.13.2+). While expanded, `is-wf-xano-expanded` is set on the control and the target. Controls whose target isn't actually clamped (short text) are hidden automatically. Clicks don't bubble, so the control is safe inside `wf-xano-link` card anchors. Call `WfXano.initShowMore(scope?)` to re-wire after async content binding. |
 
 ### Counts
@@ -69,7 +73,7 @@ Set on the wrapper via `wf-xano-load` (Finsweet's `load` setting). Append modes 
 | --- | --- |
 | `pagination` *(default)* | Numbered page buttons (needs a true total; see above). |
 | `more` | `wf-xano-element="load-more"` appends the next page on click; the control hides when exhausted. |
-| `infinite` | Appends the next page as `load-more` (or the list tail) scrolls into view. `wf-xano-threshold` (px) tunes the trigger distance. |
+| `infinite` | Appends the next page as `load-more` (or an internal tail sentinel) scrolls into view. `wf-xano-threshold` (px) tunes the trigger distance. |
 | `all` | Fetches every page up front and accumulates. |
 
 Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. The root gets `is-wf-xano-exhausted` when no more pages remain.
@@ -113,7 +117,7 @@ Add these to the elements above to tune behavior.
 | `wf-xano-page-window` | number | `5` | Numbered page buttons centered on the current page. |
 | `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
 | `wf-xano-debounce` | ms | `300` | Debounce for search inputs (can be overridden per input). |
-| `wf-xano-url-sync` | `true` | — | Write page + params to the query string (`<key>_page`, `<key>_<param>`) and restore them on load. |
+| `wf-xano-url-sync` | `true` | — | Write page + declared filter/search/sort state to the query string (`<key>_page`, `<key>_<param>`) and restore it on load. Static `wf-xano-param-*` values are never serialized or overwritten from the URL. |
 | `wf-xano-param-<name>` | any value | — | Static request param, e.g. `wf-xano-param-status="Active"`. |
 
 ### On cards / controls
@@ -159,7 +163,10 @@ The key is also the [URL-sync](#settings) prefix and the argument to `WfXano.get
 - Every request is sent with `cache: 'no-store'` — Xano is authoritative and results are never
   served stale.
 - Requests are **sequenced**: when loads overlap (debounced search + a filter click), a stale
-  out-of-order response is dropped instead of rendering over the newest one.
+  out-of-order response is dropped instead of rendering over the newest one; superseded fetches
+  are aborted when supported.
 - `POST` (default) sends `{...params, page, per_page}` as a JSON body — matching Xano's standard
   paged list inputs. Responses are normalized from Xano's `{items, itemsTotal, curPage, pageTotal}`
   shape (raw arrays and single objects also work).
+- `GET` sends no JSON content-type header, avoiding an unnecessary CORS preflight for public lists.
+- Failed append requests keep already-rendered pages and retry the same page on the next attempt.

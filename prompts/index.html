@@ -256,7 +256,7 @@ Create: POST /auth/trade-token/v3 in API group {{AUTH_GROUP}}.
 {{XANO_BASE}}/api:{{AUTH_GROUP}}/auth/trade-token/v3 — keep this path unless
 WfXanoConfig.tradeTokenPath is also changed on the Webflow side.)
 
-- Input: token (text) — a Memberstack member JWT, arriving as ?token=&lt;jwt&gt;.
+- Input: token (text) — a Memberstack member JWT from the POST JSON body.
 - Function stack:
   1. Verify the JWT against Memberstack (Memberstack's verify endpoint or
      JWT decode with the app's public key) and extract member id + email.
@@ -518,7 +518,7 @@ D. The list (Div Block "opps-wrapper"):
         <h3>W3 · Install snippet</h3>
         <p>The config + script pair for Webflow&rsquo;s page settings (before <code>&lt;/body&gt;</code>).
           When using Memberstack auth it must come <strong>after</strong> the memberstack-x script tag.</p>
-        <p class="tokens">Tokens: <code>{{XANO_BASE}}</code></p>
+        <p class="tokens">Tokens: <code>{{XANO_BASE}}</code> <code>{{AUTH_GROUP}}</code></p>
         <div class="actions">
           <button data-src="src-w3-html">Copy install snippet</button>
         </div>
@@ -526,11 +526,14 @@ D. The list (Div Block "opps-wrapper"):
           <summary>Custom-code snippet</summary>
           <pre class="copy-src" id="src-w3-html">&lt;!-- wf-xano — after memberstack-x when using auth --&gt;
 &lt;script&gt;
-  window.WfXanoConfig = { xanoBase: '{{XANO_BASE}}' }
+  window.WfXanoConfig = {
+    xanoBase: '{{XANO_BASE}}',
+    authBase: '{{XANO_BASE}}/api:{{AUTH_GROUP}}'
+  }
 &lt;/script&gt;
-&lt;script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.7.0/wf-xano.min.js"&gt;&lt;/script&gt;
-&lt;!-- Pin an exact version for production (as above). @0.7 tracks patches,
-     @latest tracks releases — see the README's Versioning table. --&gt;</pre>
+&lt;script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@latest/wf-xano.min.js"&gt;&lt;/script&gt;
+&lt;!-- @latest follows tagged releases. Pin @0.17.0 when a deterministic
+     version is required — see the README's Versioning table. --&gt;</pre>
         </details>
       </section>
 
