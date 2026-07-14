@@ -646,14 +646,30 @@
     return request
   }
 
+  function ensureFavoriteObserver() {
+    if (_favoriteObserver || !document.body || typeof MutationObserver !== 'function') return
+    _favoriteObserver = new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        Array.prototype.forEach.call(record.addedNodes || [], function (node) {
+          if (!node || node.nodeType !== 1) return
+          initFavorites(node)
+        })
+      })
+    })
+    _favoriteObserver.observe(document.body, { childList: true, subtree: true })
+  }
+
   function initFavorites(scope) {
-    var controls = favoriteControls(scope)
-    if (!controls.length) return
     if (!favoriteEndpoint('ids') || !favoriteEndpoint('toggle')) {
-      console.warn('[wf-xano] favorite controls found but WfXanoConfig.favoritesSource is missing')
-      hideFavoriteControls()
+      if (favoriteControls(scope).length) {
+        console.warn('[wf-xano] favorite controls found but WfXanoConfig.favoritesSource is missing')
+        hideFavoriteControls()
+      }
       return
     }
+    ensureFavoriteObserver()
+    var controls = favoriteControls(scope)
+    if (!controls.length) return
     var types = {}
     controls.forEach(function (el) {
       var type = favoriteType(el)
@@ -665,18 +681,6 @@
       })
     })
     paintFavoriteControls(scope)
-    if (!_favoriteObserver && document.body && typeof MutationObserver === 'function') {
-      _favoriteObserver = new MutationObserver(function (records) {
-        records.forEach(function (record) {
-          Array.prototype.forEach.call(record.addedNodes || [], function (node) {
-            if (!node || node.nodeType !== 1) return
-            initFavorites(node)
-            paintFavoriteControls(node)
-          })
-        })
-      })
-      _favoriteObserver.observe(document.body, { childList: true, subtree: true })
-    }
   }
 
   document.addEventListener('click', function (event) {

@@ -1695,4 +1695,25 @@ const FULL_PAGE1 = {
   console.log('PASS 48: dynamic wf-xano card + member-switch isolation')
 }
 
+// ---------- Test 49: cards injected after boot with zero controls at load still hydrate ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body></body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano' })
+    if (url.endsWith('/ids')) return makeRes({ ids: ['wf-late'] })
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  await new Promise((r) => setTimeout(r, 30))
+  const card = w.document.createElement('article')
+  card.setAttribute('data-wf-algolia-hit-objectid', 'wf-late')
+  card.innerHTML = '<button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button>'
+  w.document.body.appendChild(card)
+  assert.ok(await waitFor(() => card.querySelector('button').classList.contains('is-wf-xano-favorited')), 'card injected after boot hydrates saved state')
+  console.log('PASS 49: post-boot injection hydrates when no controls exist at load')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
