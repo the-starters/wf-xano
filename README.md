@@ -58,18 +58,24 @@ Add to your page's custom code, **after** `memberstack-x` (only needed when usin
 
 ```html
 <script>
-  window.WfXanoConfig = { xanoBase: 'https://YOUR-ID.xano.io' }
+  window.WfXanoConfig = {
+    xanoBase: 'https://YOUR-ID.xano.io',
+    authBase: 'https://YOUR-ID.xano.io/api:YOUR-AUTH-GROUP'
+  }
 </script>
-<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@0.7/wf-xano.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/the-starters/wf-xano@latest/wf-xano.min.js"></script>
 ```
 
 Then add attributes in the Webflow Designer. That's it — the list renders on load.
+Public lists using `wf-xano-auth="none"` do not need `authBase`.
 
 Setting up from scratch? The **[Prompt Library](https://the-starters.github.io/wf-xano/prompts/)**
 has copy-paste AI prompts and checklists for the Xano side (tables, paged endpoint, auth) and
 ready-made Webflow structures (Embed snippets, native paste-into-Designer components).
 
 - **[Attribute reference →](docs/attributes.md)** every element and setting
+- **[Usage guide →](docs/usage.md)** complete public + authenticated setups, response shape,
+  loading modes, and a production checklist
 - **[API reference →](docs/api.md)** the `window.WfXano` object, events, hooks, auth
 - **[Examples →](examples/index.html)** self-contained demos with a mocked backend
   ([live](https://the-starters.github.io/wf-xano/examples/))
@@ -80,8 +86,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 
 - **Always fresh** — every request uses `cache: 'no-store'`; Xano is the source of truth.
 - **Race-safe** — overlapping requests are sequenced; a stale response never renders over a newer one.
-- **Auth built in** — Memberstack JWT → Xano trade-token, cached and auto-reset when the logged-in
-  member changes (no cross-account leaks).
+- **Auth built in** — Memberstack JWT → Xano trade-token over a no-store POST body, cached and
+  reset whenever the live session cookie changes.
 - **Full list UI from attributes** — binds (dot paths, date + name formatting), conditionals, links,
   empty/loader/error states, totals + visible ranges, numbered pagination, filters (incl. checkbox
   groups), debounced search, sort.
@@ -115,8 +121,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.7.1/wf-xano.min.js` | pinned — deterministic, recommended for production |
-| `…/gh/the-starters/wf-xano@0.7/wf-xano.min.js` | latest patch of 0.7 |
+| `…/gh/the-starters/wf-xano@0.17.0/wf-xano.min.js` | pinned — deterministic |
+| `…/gh/the-starters/wf-xano@0.17/wf-xano.min.js` | latest patch of 0.17 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.

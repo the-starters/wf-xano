@@ -21,10 +21,9 @@
  *   - Member-change token reset — dropping the cached Xano token when the
  *     Memberstack member changes, so a switched account can't inherit the
  *     previous member's data.
- *   - Parallel cold-boot auth — the member id comes from Memberstack's
- *     localStorage cache (network fallback runs concurrently with the
- *     token trade), and the trade pre-warms at script parse, so first
- *     render is not gated behind a serial auth chain.
+ *   - Parallel cold-boot auth — the live Memberstack session fingerprints
+ *     the cached token and the trade pre-warms at script parse, so first
+ *     render has no member-profile lookup or serial auth gate.
  *   - Root-element attribute handling — the card root is often the <a> (or
  *     carries binds) itself, so every per-card scan includes the root, not
  *     just descendants.
@@ -32,7 +31,10 @@
  *     clicks) resolve out of order; only the latest request may render.
  *
  * Load AFTER memberstack-x (when using auth) in the page footer:
- *   <script>window.WfXanoConfig = { xanoBase: 'https://<id>.xano.io' }</script>
+ *   <script>window.WfXanoConfig = {
+ *     xanoBase: 'https://<id>.xano.io',
+ *     authBase: 'https://<id>.xano.io/api:<auth-group>'
+ *   }</script>
  *   <script defer src=".../wf-xano.js"></script>
  *
  * Run code before/after the library loads (Finsweet-style queue):
@@ -70,12 +72,17 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.16.4'
+  var VERSION = '0.17.0'
   var CFG = window.WfXanoConfig || {}
-  var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
-  var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
+  // Never silently send another project's requests to The Starters' Xano
+  // workspace. A missing xanoBase falls back to the page origin so relative
+  // paths remain useful; group:path sources log a configuration warning.
+  var XANO_HOST = (CFG.xanoBase || window.location.origin).replace(/\/$/, '')
+  var AUTH_BASE = CFG.authBase || null
   var TRADE_PATH = CFG.tradeTokenPath || '/auth/trade-token/v3'
   var DEBUG = CFG.debug !== false
+  var ROOT_SEL =
+    '[wf-xano-element="wrapper"], [wf-xano-wrapper], [wf-xano-list], [wf-xano-element="list"][wf-xano-source]'
 
   /** @param {...unknown} a */
   function log() {
@@ -154,6 +161,26 @@
     if (el.getAttribute('wf-xano-element') === name) el.removeAttribute('wf-xano-element')
   }
 
+  /** Escape a string for use inside a quoted CSS attribute selector. */
+  function cssAttr(value) {
+    return String(value)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/[\0-\x1f\x7f]/g, function (ch) {
+        return '\\' + ch.charCodeAt(0).toString(16) + ' '
+      })
+  }
+
+  /** Nearest list wrapper, used to keep nested instances isolated. */
+  function ownerRoot(el) {
+    return el && el.closest ? el.closest(ROOT_SEL) : null
+  }
+
+  function positiveInt(value, fallback, allowZero) {
+    var n = parseInt(value, 10)
+    return isFinite(n) && (allowZero ? n >= 0 : n > 0) ? n : fallback
+  }
+
   /* ============================ VALUE HELPERS ========================== */
   /** Resolve a possibly-dotted path against an object (Xano joins nest data). */
   function get(obj, path) {
@@ -229,9 +256,13 @@
   var DATE_KINDS = { date: 1, datetime: 1, 'date-medium': 1, 'date-long': 1, 'datetime-long': 1 }
 
   /** A value that should render as nothing / trigger a wf-xano-fallback.
-   *  Includes the Unix epoch (0 / "0") since Xano stores unset timestamps as 0. */
+   *  Zero is data, not absence; epoch rejection belongs to date formatting. */
   function isBlank(v) {
-    return v == null || v === '' || v === 0 || v === '0'
+    return v == null || v === ''
+  }
+
+  function isBindBlank(v, kind) {
+    return isBlank(v) || (!!DATE_KINDS[kind] && (v === 0 || v === '0'))
   }
 
   /** Optional value formatting via wf-xano-format. Date styles:
@@ -240,10 +271,11 @@
    *  `lowercase`, `uppercase`, `capitalize` (first letter up, rest lower),
    *  else the raw value. */
   function fmt(value, kind) {
-    // Guard empties AND the Unix epoch (0 / "0") — Xano stores unset
-    // timestamps as 0, which would otherwise render as "1/1/1970".
     if (isBlank(value)) return ''
     if (kind && DATE_KINDS[kind]) {
+      // Xano commonly stores an unset timestamp as 0. Keep that special case
+      // local to date formatting so legitimate numeric zero values still bind.
+      if (value === 0 || value === '0') return ''
       var ms = typeof value === 'number' && value < 1e12 ? value * 1000 : value
       var d = new Date(ms)
       if (isNaN(d.getTime()) || d.getTime() <= 0) return ''
@@ -293,11 +325,26 @@
     if (/^https?:\/\//.test(source)) return source
     var i = source.indexOf(':')
     if (i > 0) {
+      if (!CFG.xanoBase) console.warn('[wf-xano] WfXanoConfig.xanoBase is required for group:path sources')
       var group = source.slice(0, i)
       var path = source.slice(i + 1).replace(/^\//, '')
       return XANO_HOST + '/api:' + group + '/' + path
     }
     return XANO_HOST + '/' + source.replace(/^\//, '')
+  }
+
+  function safeBoundUrl(value, kind) {
+    var raw = String(value == null ? '' : value).trim()
+    if (!raw) return null
+    // Relative URLs and fragment/query links are safe to preserve.
+    if (/^(?:[/.?#]|\.\.?\/)/.test(raw)) return raw
+    var m = /^([a-z][a-z0-9+.-]*):/i.exec(raw)
+    if (!m) return raw
+    var protocol = m[1].toLowerCase()
+    var allowed = kind === 'src' ? ['http', 'https', 'blob'] : ['http', 'https', 'mailto', 'tel']
+    if (allowed.indexOf(protocol) > -1) return raw
+    if (kind === 'src' && protocol === 'data' && /^data:image\/(?:avif|gif|jpeg|png|webp);/i.test(raw)) return raw
+    return null
   }
 
   /* ============================ AUTH BRIDGE =========================== */
@@ -306,84 +353,75 @@
   // This handshake is the cold-boot critical path, so nothing here waits
   // that doesn't have to (measured 2026-07: a serial getCurrentMember ->
   // trade-token -> list chain cost ~1.2s before first render):
-  //   - The member id is read synchronously from Memberstack's own
-  //     localStorage cache (_ms-mid / _ms-mem); ms.getCurrentMember() — a
-  //     ~500ms network round-trip — is only the fallback, and it runs
-  //     CONCURRENTLY with the cookie -> token trade instead of gating it.
-  //     The member id is only a CACHE KEY: the traded token always derives
-  //     from the live session cookie, so trading before the id resolves
-  //     can never mint a token for the wrong member.
+  //   - The live session cookie fingerprints the cached token. No member
+  //     profile lookup is needed: the traded token derives from that cookie.
   //   - The trade is pre-warmed at script-parse time (see below), so the
   //     round-trip overlaps DOM-ready instead of the first list request.
-  //   - Account-switch semantics are unchanged: a cached token is dropped
-  //     whenever the member id no longer matches the one it was traded
-  //     under (docs/api.md, Authentication), so a switched account can
-  //     never inherit the previous member's data.
-  var _auth = null // { memberId: Promise<string|null>, token: Promise<string> }
+  //   - A cached token is dropped whenever the live session cookie changes,
+  //     covering account switches and JWT rotation even if localStorage lags.
+  var _auth = null // { session, token: Promise<string> }
 
-  /** Synchronous member id from Memberstack's localStorage cache, or null. */
-  function cachedMemberId() {
-    try {
-      var mid = window.localStorage.getItem('_ms-mid')
-      if (mid) return mid.replace(/^"+|"+$/g, '')
-      var mem = window.localStorage.getItem('_ms-mem')
-      if (mem) {
-        var parsed = JSON.parse(mem)
-        if (parsed && parsed.id) return parsed.id
-      }
-    } catch (e) {
-      /* storage blocked/absent — fall through to the network */
+  function sessionFingerprint(token) {
+    // Non-cryptographic, in-memory equality key. The JWT itself is never put
+    // into a URL, storage, logs, or the public API.
+    var h = 2166136261
+    for (var i = 0; i < token.length; i++) {
+      h ^= token.charCodeAt(i)
+      h = Math.imul(h, 16777619)
     }
-    return null
+    return String(h >>> 0) + ':' + token.length
   }
 
-  /** Member id: localStorage fast path, else the getCurrentMember() network
-   *  call. Never rejects — an unknown member resolves null. */
-  function currentMemberId() {
-    var cached = cachedMemberId()
-    if (cached != null) return Promise.resolve(cached)
-    try {
-      var ms = window.$memberstackDom
-      if (!ms) return Promise.resolve(null)
-      return Promise.resolve(ms.getCurrentMember()).then(
-        function (r) {
-          return r && r.data ? r.data.id : null
-        },
-        function () {
-          return null
-        },
-      )
-    } catch (e) {
-      return Promise.resolve(null)
-    }
-  }
-
-  /** Memberstack cookie -> Xano token, one round-trip, no caching here. */
-  function tradeToken() {
+  function memberstackSession() {
     var ms = window.$memberstackDom
     if (!ms) return Promise.reject(new Error('Memberstack not available'))
-    return Promise.resolve(ms.getMemberCookie()).then(function (msToken) {
-      if (!msToken) throw new Error('No Memberstack session (member not logged in)')
-      return fetch(AUTH_BASE + TRADE_PATH + '?token=' + encodeURIComponent(msToken)).then(function (res) {
-        return res
-          .json()
-          .catch(function () {
-            return null
-          })
-          .then(function (data) {
-            if (!res.ok) throw Object.assign(new Error('trade-token failed'), { status: res.status, data: data })
-            var token = typeof data === 'string' ? data : data && (data.authToken || data.token)
-            if (!token) throw new Error('trade-token returned no token')
-            return token
-          })
-      })
+    return Promise.resolve(ms.getMemberCookie()).then(function (token) {
+      if (!token) throw new Error('No Memberstack session (member not logged in)')
+      return String(token)
+    })
+  }
+
+  /** Memberstack cookie -> Xano token, one round-trip, no caching here.
+   *  POST keeps the JWT out of URLs and infrastructure access logs. Legacy
+   *  bridges can temporarily opt into GET with tradeTokenMethod: 'GET'. */
+  function tradeToken(msToken) {
+    if (!AUTH_BASE) return Promise.reject(new Error('WfXanoConfig.authBase is required for Memberstack auth'))
+    if (/^http:\/\//i.test(AUTH_BASE) && CFG.allowInsecureAuth !== true) {
+      return Promise.reject(new Error('Refusing token trade over insecure HTTP'))
+    }
+    var method = String(CFG.tradeTokenMethod || 'POST').toUpperCase()
+    var url = AUTH_BASE + TRADE_PATH
+    var request = { method: method, cache: 'no-store' }
+    if (method === 'GET') url += '?token=' + encodeURIComponent(msToken)
+    else {
+      request.headers = { 'Content-Type': 'application/json' }
+      request.body = JSON.stringify({ token: msToken })
+    }
+    return fetch(url, request).then(function (res) {
+      return res
+        .json()
+        .catch(function () {
+          return null
+        })
+        .then(function (data) {
+          if (!res.ok) throw Object.assign(new Error('trade-token failed'), { status: res.status, data: data })
+          var token = typeof data === 'string' ? data : data && (data.authToken || data.token)
+          if (!token) throw new Error('trade-token returned no token')
+          return token
+        })
     })
   }
 
   /** Kick off member-id resolution and the token trade IN PARALLEL. */
   function startAuth() {
-    var auth = { memberId: currentMemberId(), token: null }
-    auth.token = tradeToken().catch(function (err) {
+    var session = memberstackSession()
+    var auth = {
+      session: session.then(sessionFingerprint, function () {
+        return null
+      }),
+      token: null,
+    }
+    auth.token = session.then(tradeToken).catch(function (err) {
       // A failed trade (logged out, endpoint down) must not poison the
       // cache — the next authed load retries a fresh handshake.
       if (_auth === auth) _auth = null
@@ -394,11 +432,12 @@
 
   async function xanoToken() {
     if (_auth) {
-      // Cached (or in-flight) token: reconcile the member id — instant on
-      // the localStorage path — and drop the token on an account switch.
-      var owner = await _auth.memberId
-      var mid = await currentMemberId()
-      if (mid !== owner) _auth = null
+      // The live session cookie is the authoritative owner key. A cookie
+      // change (account switch or JWT rotation) always forces a fresh trade;
+      // no Memberstack profile/localStorage metadata is trusted as identity.
+      var ownerSession = await _auth.session
+      var liveSession = await memberstackSession().then(sessionFingerprint)
+      if (liveSession !== ownerSession) _auth = null
     }
     if (!_auth) _auth = startAuth()
     return _auth.token
@@ -409,7 +448,7 @@
   // page work it used to serialize behind. Requires memberstack-x to have
   // loaded first (the documented script order); disable with
   // WfXanoConfig.preAuth = false on pages where every list is auth="none".
-  if (CFG.preAuth !== false && window.$memberstackDom) {
+  if (CFG.preAuth !== false && AUTH_BASE && window.$memberstackDom) {
     _auth = startAuth()
     _auth.token.catch(function () {
       /* logged out / trade failure — surfaced by the first authed load */
@@ -448,20 +487,28 @@
   // Every scan includes the card root (root-element lesson: the template
   // root is often the <a> or carries binds itself).
   function fillCard(card, item) {
-    // text / form-value binds (dot paths + optional wf-xano-format). When the
-    // primary field is blank (null/''/0/"0" — same rule fmt uses), fall back
-    // through the comma-separated wf-xano-fallback fields in order, e.g.
+    // text / form-value binds (dot paths + optional wf-xano-format). Missing
+    // values fall back through the comma-separated fields in order; epoch 0
+    // is treated as missing only when a date format is active, e.g.
     // wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at".
     qaWithRoot(card, '[wf-xano-bind]').forEach(function (el) {
       var raw = get(item, el.getAttribute('wf-xano-bind'))
       var fb = el.getAttribute('wf-xano-fallback')
-      if (fb && isBlank(raw)) {
+      var kind = el.getAttribute('wf-xano-format')
+      if (fb && isBindBlank(raw, kind)) {
         var fields = fb.split(',')
-        for (var i = 0; i < fields.length && isBlank(raw); i++) {
+        for (var i = 0; i < fields.length && isBindBlank(raw, kind); i++) {
           raw = get(item, fields[i].trim())
         }
       }
-      var value = fmt(raw, el.getAttribute('wf-xano-format'))
+      var value = fmt(raw, kind)
+      // wf-xano-default: literal text rendered when the value is still blank
+      // after field fallbacks. A real numeric/string zero remains real data.
+      // A default is a real display value, so prefix/suffix still wrap it.
+      if (value === '') {
+        var def = el.getAttribute('wf-xano-default')
+        if (def != null) value = def
+      }
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
         // Form-value binds take the raw formatted value — prefix/suffix are a
         // display affordance and would corrupt a submitted/filter value.
@@ -491,12 +538,19 @@
         v = get(item, fields[i].trim())
       }
       if (v != null && v !== '') {
+        var src = safeBoundUrl(v, 'src')
+        if (!src) {
+          el.removeAttribute('src')
+          el.removeAttribute('srcset')
+          console.warn('[wf-xano] blocked unsafe image URL')
+          return
+        }
         // Webflow responsive images and Memberstack avatars can leave a
         // low-resolution srcset on the template. Once Xano supplies the
         // authoritative image, remove that stale candidate so the browser
         // cannot choose it instead of the newly-bound src.
         el.removeAttribute('srcset')
-        el.setAttribute('src', String(v))
+        el.setAttribute('src', src)
       }
     })
     // conditionals (wf-xano-display mirrors wf-algolia-display; default clears inline style)
@@ -510,7 +564,14 @@
       var pre = a.getAttribute('wf-xano-link-prefix') || ''
       var suf = a.getAttribute('wf-xano-link-suffix') || ''
       var v = get(item, field)
-      if (v != null) a.setAttribute('href', pre + v + suf)
+      if (v != null) {
+        var href = safeBoundUrl(pre + v + suf, 'href')
+        if (href) a.setAttribute('href', href)
+        else {
+          a.removeAttribute('href')
+          console.warn('[wf-xano] blocked unsafe link URL')
+        }
+      }
     })
   }
 
@@ -783,37 +844,43 @@
     this.url = resolveUrl(this.source)
     this.method = (root.getAttribute('wf-xano-method') || 'POST').toUpperCase()
     this.auth = root.getAttribute('wf-xano-auth') !== 'none'
-    this.perPage = parseInt(root.getAttribute('wf-xano-per-page') || '20', 10)
-    this.pageWindow = parseInt(root.getAttribute('wf-xano-page-window') || '5', 10)
+    this.perPage = positiveInt(root.getAttribute('wf-xano-per-page'), 20)
+    this.pageWindow = positiveInt(root.getAttribute('wf-xano-page-window'), 5)
     // Boundary pages always shown at each edge (Finsweet page-boundary). With
     // a wf-xano-element="page-dots" template present, gaps between the window
     // and the boundaries render as ellipses -> e.g. 1 2 … 7 8 9 … 24 25.
-    this.pageBoundary = parseInt(root.getAttribute('wf-xano-page-boundary') || '1', 10)
+    this.pageBoundary = positiveInt(root.getAttribute('wf-xano-page-boundary'), 1, true)
     // How pages are consumed (Finsweet's `load` setting): 'pagination' =
     // numbered buttons (needs a true total); 'more' = append on load-more
     // click; 'infinite' = append on scroll; 'all' = fetch every page up front.
     // The append modes need only nextPage, so they work when the endpoint
     // omits a total count.
     this.loadMode = (root.getAttribute('wf-xano-load') || 'pagination').toLowerCase()
+    if (['pagination', 'more', 'infinite', 'all'].indexOf(this.loadMode) === -1) this.loadMode = 'pagination'
     this.appendMode = this.loadMode === 'more' || this.loadMode === 'infinite' || this.loadMode === 'all'
-    this.threshold = parseInt(root.getAttribute('wf-xano-threshold') || '0', 10)
-    this.debounce = parseInt(root.getAttribute('wf-xano-debounce') || '300', 10)
+    this.threshold = positiveInt(root.getAttribute('wf-xano-threshold'), 0, true)
+    this.debounce = positiveInt(root.getAttribute('wf-xano-debounce'), 300, true)
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.page = 1
     this.params = this.readStaticParams()
     // Baseline for clearParams()/tag chips: static wf-xano-param-* values
     // are configuration, not user filters.
     this.baseParams = Object.assign({}, this.params)
-    this.template = q(root, elSel('template'))
-    this.emptyEl = q(root, elSel('empty'))
-    this.loaderEl = q(root, elSel('loader'))
-    this.errorEl = q(root, elSel('error'))
+    var owned = function (sel) {
+      return qa(root, sel).filter(function (el) {
+        return ownerRoot(el) === root
+      })[0] || null
+    }
+    this.template = owned(elSel('template'))
+    this.emptyEl = owned(elSel('empty'))
+    this.loaderEl = owned(elSel('loader'))
+    this.errorEl = owned(elSel('error'))
     // Optional items container (Finsweet's `list` role). Cards render here;
     // default is the template's own parent. The root itself never counts
     // (v0.3.0 markup used element="list" + source on the root).
     this.listEl =
       qa(root, '[wf-xano-element="list"]').filter(function (el) {
-        return el !== root
+        return el !== root && ownerRoot(el) === root
       })[0] || null
     this.listeners = {}
     this._searchTimer = null
@@ -822,6 +889,7 @@
     this._pages = 1
     this._lastResult = null
     this._ac = typeof AbortController === 'function' ? new AbortController() : null
+    this._fetchAc = null
 
     if (!this.url) {
       console.error('[wf-xano] missing wf-xano-source on', root)
@@ -831,9 +899,22 @@
       console.error('[wf-xano] missing template (wf-xano-element="template") inside', root)
       return
     }
+    if (this.auth && !AUTH_BASE) {
+      console.error('[wf-xano] WfXanoConfig.authBase is required when auth is enabled')
+      return
+    }
+    if (this.auth && /^http:\/\//i.test(this.url) && CFG.allowInsecureAuth !== true) {
+      console.error('[wf-xano] refusing authenticated request over insecure HTTP', this.url)
+      return
+    }
     this.ok = true
     this.template.style.display = 'none'
     root.__wfXano = this
+    root.setAttribute('aria-busy', 'false')
+    if (this.errorEl) {
+      if (!this.errorEl.hasAttribute('role')) this.errorEl.setAttribute('role', 'alert')
+      if (!this.errorEl.hasAttribute('aria-live')) this.errorEl.setAttribute('aria-live', 'polite')
+    }
     this.tagTemplate = this.q(elSel('tag'))
     if (this.tagTemplate) this.tagTemplate.style.display = 'none'
     if (this.urlSync) this.restoreFromUrl()
@@ -849,7 +930,7 @@
     var self = this
     var inside = qa(this.root, sel).filter(function (el) {
       var declared = el.getAttribute('wf-xano-instance')
-      return !declared || declared === self.key
+      return ownerRoot(el) === self.root && (!declared || declared === self.key)
     })
     if (!this.key) return inside
     // Append the instance scope to EVERY branch of a comma-separated
@@ -857,7 +938,7 @@
     var scoped = sel
       .split(',')
       .map(function (part) {
-        return part.trim() + '[wf-xano-instance="' + self.key + '"]'
+        return part.trim() + '[wf-xano-instance="' + cssAttr(self.key) + '"]'
       })
       .join(', ')
     var outside = qa(document, scoped).filter(function (el) {
@@ -884,18 +965,32 @@
     return (this.key || 'wfx') + '_'
   }
 
+  /** URL state is limited to fields declared by filter/search/sort controls.
+   *  This prevents arbitrary query-string keys from becoming API inputs. */
+  Instance.prototype.urlFields = function () {
+    var fields = {}
+    this.qa('[wf-xano-filter], [wf-xano-search], [wf-xano-sort]').forEach(function (el) {
+      if (el.matches('[wf-xano-element="clear"], [wf-xano-clear]')) return
+      var field = el.getAttribute('wf-xano-filter') || el.getAttribute('wf-xano-search')
+      if (!field && el.hasAttribute('wf-xano-sort')) field = el.getAttribute('wf-xano-sort') || 'sort'
+      if (field) fields[field] = true
+    })
+    return fields
+  }
+
   /** Read `<prefix>page` / `<prefix><param>` from the query string into state. */
   Instance.prototype.restoreFromUrl = function () {
     var prefix = this.urlPrefix()
     var sp = new URLSearchParams(location.search)
     var self = this
+    var allowed = this.urlFields()
     sp.forEach(function (value, name) {
       if (name.indexOf(prefix) !== 0) return
       var field = name.slice(prefix.length)
       if (field === 'page') {
         var p = parseInt(value, 10)
         if (p > 1) self.page = p
-      } else if (value !== '') {
+      } else if (allowed[field] && value !== '') {
         self.params[field] = value
       }
     })
@@ -912,9 +1007,10 @@
     stale.forEach(function (name) {
       sp.delete(name)
     })
-    var self = this
-    Object.keys(this.params).forEach(function (k) {
-      sp.set(prefix + k, self.params[k])
+    var user = this.userParams()
+    var allowed = this.urlFields()
+    Object.keys(user).forEach(function (k) {
+      if (allowed[k]) sp.set(prefix + k, user[k])
     })
     if (this.page > 1) sp.set(prefix + 'page', String(this.page))
     var qs = sp.toString()
@@ -1097,7 +1193,15 @@
    *  listener where IntersectionObserver is unavailable. */
   Instance.prototype.bindInfinite = function () {
     var self = this
-    var sentinel = this.q(elSel('load-more')) || this.listEl || this.template.parentNode
+    var sentinel = this.q(elSel('load-more'))
+    if (!sentinel) {
+      sentinel = document.createElement('span')
+      sentinel.setAttribute('data-wf-xano-sentinel', '')
+      sentinel.setAttribute('aria-hidden', 'true')
+      sentinel.style.cssText = 'display:block;width:1px;height:1px;pointer-events:none'
+      ;(this.listEl || this.template.parentNode).appendChild(sentinel)
+      this._infiniteSentinel = sentinel
+    }
     if (!sentinel) return
     if (typeof IntersectionObserver === 'function') {
       this._io = new IntersectionObserver(
@@ -1110,7 +1214,7 @@
     } else {
       var onScroll = function () {
         var r = sentinel.getBoundingClientRect()
-        if (r.top - (self.threshold || 0) <= window.innerHeight) self.loadNext()
+        if (r.top <= window.innerHeight + (self.threshold || 0) && r.bottom >= 0) self.loadNext()
       }
       window.addEventListener('scroll', onScroll, this._ac ? { signal: this._ac.signal } : false)
     }
@@ -1120,8 +1224,9 @@
    *  flight or when the last response reported no further pages. */
   Instance.prototype.loadNext = function () {
     if (this._loading || (this._lastResult && !this._lastResult.hasMore)) return
+    var previousPage = this.page
     this.page += 1
-    return this.load({ append: true })
+    return this.load({ append: true, previousPage: previousPage })
   }
 
   /** Set/clear a request param, reset to page 1, reload. */
@@ -1254,14 +1359,18 @@
     showStateEl(this.errorEl, state === 'error')
     this.root.classList.toggle('is-wf-xano-loading', state === 'loading')
     this.root.classList.toggle('is-wf-xano-error', state === 'error')
+    this.root.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false')
     // is-wf-xano-empty is decided in render()
   }
 
   Instance.prototype.load = async function (opts) {
     if (!this.ok) return
     var append = !!(opts && opts.append)
+    var previousPage = opts && opts.previousPage
     var self = this
     var seq = ++this._seq
+    if (this._fetchAc) this._fetchAc.abort()
+    this._fetchAc = typeof AbortController === 'function' ? new AbortController() : null
     this._loading = true
     this.setState('loading')
     // Replace-mode loads (filter/tab/page change, refresh) clear the previous
@@ -1280,7 +1389,7 @@
       this.root.classList.remove('is-wf-xano-empty')
     }
     try {
-      var headers = { 'Content-Type': 'application/json' }
+      var headers = {}
       if (this.auth) headers.Authorization = 'Bearer ' + (await xanoToken())
       var payload = {}
       Object.keys(this.params).forEach(function (k) {
@@ -1290,15 +1399,17 @@
       payload.per_page = this.perPage
 
       var url = this.url
-      var opts = { method: this.method, headers: headers, cache: 'no-store' }
+      var request = { method: this.method, headers: headers, cache: 'no-store' }
+      if (this._fetchAc) request.signal = this._fetchAc.signal
       if (this.method === 'GET') {
         var qs = toQuery(payload)
         if (qs) url += (url.indexOf('?') > -1 ? '&' : '?') + qs
       } else {
-        opts.body = JSON.stringify(payload)
+        headers['Content-Type'] = 'application/json'
+        request.body = JSON.stringify(payload)
       }
 
-      var res = await fetch(url, opts)
+      var res = await fetch(url, request)
       var data = await res.json().catch(function () {
         return null
       })
@@ -1307,6 +1418,7 @@
       if (!res.ok) throw Object.assign(new Error('wf-xano ' + res.status), { status: res.status, data: data })
 
       var result = normalize(data, this.perPage)
+      this.page = result.page
       // beforeRender hooks may transform (filter/augment/reorder) the items.
       var hooks = this.listeners['beforeRender'] || []
       for (var i = 0; i < hooks.length; i++) {
@@ -1327,7 +1439,12 @@
       this._loading = false
       console.error('[wf-xano] load failed', this.source, err)
       this.setState('error')
-      this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
+      if (append) {
+        // Keep already-rendered pages and make the failed page retryable.
+        this.page = previousPage != null ? previousPage : Math.max(1, this.page - 1)
+      } else {
+        this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
+      }
       this.emit('error', err)
     }
   }
@@ -1356,7 +1473,9 @@
       if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
       fillCard(card, item)
       wireShowMore(card)
-      list.appendChild(card)
+      if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
+        list.insertBefore(card, self._infiniteSentinel)
+      } else list.appendChild(card)
       appended.push(card)
     })
     // Clamp detection needs layout, so measure a tick after the cards land.
@@ -1397,6 +1516,7 @@
     this.qa(elSel('load-more')).forEach(function (el) {
       showStateEl(el, more)
       el.classList.toggle('is-disabled', !more)
+      el.setAttribute('aria-disabled', more ? 'false' : 'true')
     })
     this.root.classList.toggle('is-wf-xano-exhausted', !more)
   }
@@ -1404,10 +1524,14 @@
   Instance.prototype.renderPagination = function (result) {
     var self = this
     this.qa(elSel('page-prev')).forEach(function (el) {
-      el.classList.toggle('is-disabled', result.page <= 1)
+      var disabled = result.page <= 1
+      el.classList.toggle('is-disabled', disabled)
+      el.setAttribute('aria-disabled', disabled ? 'true' : 'false')
     })
     this.qa(elSel('page-next')).forEach(function (el) {
-      el.classList.toggle('is-disabled', result.page >= result.pages)
+      var disabled = result.page >= result.pages
+      el.classList.toggle('is-disabled', disabled)
+      el.setAttribute('aria-disabled', disabled ? 'true' : 'false')
     })
 
     var tmpl = this.q(elSel('page-number'))
@@ -1488,6 +1612,7 @@
   Instance.prototype.destroy = function () {
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()
+    if (this._fetchAc) this._fetchAc.abort()
     if (this._io) this._io.disconnect()
     window.clearTimeout(this._searchTimer)
     if (this.template) {
@@ -1495,7 +1620,9 @@
         c.remove()
       })
     }
+    if (this._infiniteSentinel) this._infiniteSentinel.remove()
     this.root.classList.remove('is-wf-xano-loading', 'is-wf-xano-error', 'is-wf-xano-empty')
+    this.root.removeAttribute('aria-busy')
     delete this.root.__wfXano
     var i = instances.indexOf(this)
     if (i > -1) instances.splice(i, 1)
@@ -1508,13 +1635,16 @@
     // Roots: canonical `wrapper`, plus legacy aliases — the bare
     // wf-xano-list marker and v0.3.0's element="list" WITH wf-xano-source
     // (source disambiguates a root from Finsweet-style items containers).
-    var sel = elSel('wrapper') + ', [wf-xano-list], [wf-xano-element="list"][wf-xano-source]'
-    qa(root, sel).forEach(function (el) {
+    var sel = ROOT_SEL
+    var roots = qa(root, sel)
+    if (root.matches && root.matches(sel)) roots.unshift(root)
+    roots.forEach(function (el) {
       if (el.__wfXano) return
       if (!el.matches('[wf-xano-element="wrapper"], [wf-xano-wrapper]')) {
         log('deprecated root marker on', el, '— use wf-xano-element="wrapper"')
       }
-      instances.push(new Instance(el))
+      var instance = new Instance(el)
+      if (instance.ok) instances.push(instance)
     })
     log('initialized', instances.length, 'list(s)')
   }
@@ -1538,6 +1668,21 @@
     _pendingCallbacks.splice(0).forEach(runCallback)
   }
 
+  /** Resolve a root, descendant, or instance-keyed external control. */
+  function instanceForElement(el) {
+    if (!el) return null
+    if (el.__wfXano) return el.__wfXano
+    var wrapper = el.closest ? el.closest(ROOT_SEL) : null
+    if (wrapper && wrapper.__wfXano) return wrapper.__wfXano
+    var key = el.getAttribute && el.getAttribute('wf-xano-instance')
+    if (!key) return null
+    return (
+      instances.filter(function (instance) {
+        return instance.key === key
+      })[0] || null
+    )
+  }
+
   // Public API. Replaces the pre-load queue array (GA/Finsweet pattern):
   // callbacks queued before load run after boot; push() after boot runs
   // the callback immediately.
@@ -1556,7 +1701,10 @@
     },
     /** Refresh all lists, or a specific list root element. */
     refresh: function (root) {
-      if (root && root.__wfXano) return root.__wfXano.refresh()
+      if (root) {
+        var instance = instanceForElement(root)
+        return instance ? instance.refresh() : undefined
+      }
       instances.slice().forEach(function (i) {
         i.refresh()
       })
@@ -1571,7 +1719,10 @@
     },
     /** Destroy all instances (or one root element's instance). */
     destroy: function (root) {
-      if (root && root.__wfXano) return root.__wfXano.destroy()
+      if (root) {
+        var instance = instanceForElement(root)
+        return instance ? instance.destroy() : undefined
+      }
       instances.slice().forEach(function (i) {
         i.destroy()
       })

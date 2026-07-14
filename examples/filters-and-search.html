@@ -60,7 +60,7 @@
             json: () => Promise.resolve({ items: paged, itemsTotal: items.length, curPage: page, pageTotal: Math.max(1, Math.ceil(items.length / per)) }),
           }), 250)) // slight delay so the is-wf-xano-loading dim is visible
         }
-        window.WfXanoConfig = { xanoBase: 'https://demo.xano.io', debug: true }
+        window.WfXanoConfig = { xanoBase: 'https://demo.xano.io', preAuth: false, debug: true }
       </script>
 
       <div wf-xano-element="wrapper" wf-xano-instance="apps" wf-xano-source="opp30:brand/applications/list" wf-xano-auth="none" wf-xano-per-page="8">

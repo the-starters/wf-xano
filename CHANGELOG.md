@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.17.0 — 2026-07-14
+
+### Changed
+
+- **Real zero values are data, not blanks.** `0` and `"0"` now render normally
+  and beat `wf-xano-fallback`/`wf-xano-default`; the Xano epoch-zero guard is
+  limited to date formats. This corrects counts, budgets, ratings, and other
+  numeric fields without requiring a display workaround.
+- **Memberstack token trades use `POST` by default.** The JWT is sent in a JSON
+  body with `cache: "no-store"`, never in the URL. `WfXanoConfig.authBase` is
+  now required for authenticated lists. A legacy bridge can temporarily set
+  `tradeTokenMethod: "GET"` while it migrates.
+- Missing `xanoBase` no longer targets The Starters' production Xano host.
+  Group-style sources fall back to the current origin and log a configuration
+  warning; configure `xanoBase` in production.
+
+### Fixed
+
+- Failed load-more/infinite requests preserve accumulated cards, roll page
+  state back, and retry the failed page instead of clearing the list and
+  skipping ahead.
+- URL restore accepts only declared filter/search/sort fields, cannot overwrite
+  static `wf-xano-param-*` values, and serializes only user-controlled state.
+- Infinite mode now creates a moving tail sentinel when no explicit load-more
+  control exists, avoiding stalled observers on a growing list container.
+- Superseded requests are aborted, GET requests no longer send a needless JSON
+  content-type header, unsafe bound URL protocols are rejected, and authenticated
+  HTTP endpoints are blocked unless explicitly allowed for local development.
+- Dynamic init accepts a wrapper as the scope itself; refresh/destroy accept
+  descendants and instance-keyed external controls; invalid and nested wrappers
+  no longer pollute or cross-bind instance state.
+
+### Added
+
+- Accessibility state: `aria-busy` on wrappers, `aria-disabled` on paging/load
+  controls, and alert/live defaults on error elements.
+- A task-oriented usage guide covering public and authenticated setup, the Xano
+  response contract, loading modes, production checks, and troubleshooting.
+- A self-contained authenticated example that demonstrates the Memberstack JWT
+  trade, bearer-token list request, and visible request states without a live backend.
+
+## v0.16.5 — 2026-07-14
+
+### Added
+
+- **`wf-xano-default`** — literal text rendered when a bound value is still
+  blank after `wf-xano-fallback` fields. Because blank includes `0`/`"0"`
+  (the epoch guard), this is how a count field shows a real zero:
+  `<span wf-xano-bind="applicants" wf-xano-default="0">`. A default is a real
+  display value, so `wf-xano-prefix`/`wf-xano-suffix` still wrap it.
+
 ## v0.16.4 — 2026-07-14
 
 ### Added
