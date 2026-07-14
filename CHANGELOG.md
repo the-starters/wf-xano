@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.18.0 — 2026-07-14
+
+### Added
+
+- **Authenticated cross-renderer favorites.** `wf-xano-element="favorite"` controls now work
+  inside cards rendered by wf-xano or wf-algolia, using the card's stable DOM item ID or an
+  explicit `wf-xano-favorite-id`.
+- Initial saved-ID hydration, optimistic save/remove state, duplicate-control synchronization,
+  mutation rollback, accessible labels/pressed/busy state, and automatic refresh of Saved lists
+  marked with `wf-xano-refresh-on="favorite"`.
+- `WfXano.favorites` APIs plus privacy-safe `wf-xano:favorite` and
+  `wf-xano:favorite-error` document events.
+
+### Fixed
+
+- Favorite observers now initialize before an async renderer injects the first card, without
+  rescanning/retrying auth for every later Algolia result batch.
+- Logged-out and newly logged-out sessions keep controls hidden and clear stale favorite state.
+- Favorite clicks are intercepted before JavaScript-driven card navigation handlers.
+
 ## v0.17.0 — 2026-07-14
 
 ### Changed
