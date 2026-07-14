@@ -110,7 +110,8 @@ const FULL_PAGE1 = {
   await waitFor(() => calls.length === 3)
   assert.equal(calls[2].status, 'Closed', 'setParam adds status filter')
   assert.equal(calls[2].page, 1, 'setParam resets to page 1')
-  assert.equal(w.document.querySelector('[wf-xano-empty]').style.display, '', 'empty shown when no items')
+  // empty is hidden while loading and re-shown by render() once the (empty) page lands
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-empty]').style.display === ''), 'empty shown when no items (after render)')
   console.log('PASS B: setParam/goToPage re-fetch, page reset, empty state')
 }
 
@@ -162,6 +163,37 @@ const FULL_PAGE1 = {
   inst.load({ append: true }) // append mode must NOT clear existing items
   assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'append keeps prior item and adds the new one')
   console.log('PASS B3: append-mode load keeps prior items')
+}
+
+// ---------- Test B4: replace-mode refetch hides the empty state while loading ----------
+{
+  const dom = new JSDOM(FULL_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  let releaseSecond
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push(JSON.parse(opts.body))
+    if (calls.length === 1) return makeRes(PAGE([], 0)) // initial: 0 items -> "no results" shown
+    return new Promise((res) => {
+      releaseSecond = () =>
+        res({ ok: true, status: 200, json: () => Promise.resolve(PAGE([{ id: 7, title: 'Found', description: '', published_at: '2026-06-30T00:00:00Z', status: 'Active', owner: 'X' }], 1)) })
+    })
+  }
+  w.eval(LIB)
+  const emptyEl = w.document.querySelector('[wf-xano-empty]')
+  assert.ok(await waitFor(() => emptyEl.style.display === ''), 'empty shown initially (0 items)')
+  const inst = w.document.querySelector('[wf-xano-list]').__wfXano
+  inst.setParam('status', 'Closed') // replace-mode refetch; fetch left pending
+  assert.ok(await waitFor(() => calls.length === 2), 'second fetch issued')
+  // The point: the "no results" block is hidden WHILE the new request is in
+  // flight (only the loader shows), instead of lingering under the loader.
+  assert.equal(emptyEl.style.display, 'none', 'empty hidden during in-flight replace load')
+  assert.notEqual(w.document.querySelector('[wf-xano-loader]').style.display, 'none', 'loader shown during in-flight load')
+  releaseSecond()
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'item renders once fetch resolves')
+  assert.equal(emptyEl.style.display, 'none', 'empty stays hidden with an item')
+  console.log('PASS B4: replace-mode refetch hides empty state while loading')
 }
 
 // ---------- Test C: pure helpers ----------
