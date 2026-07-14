@@ -70,7 +70,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.16.1'
+  var VERSION = '0.16.2'
   var CFG = window.WfXanoConfig || {}
   var XANO_HOST = (CFG.xanoBase || 'https://x08a-5ko8-jj1r.n7c.xano.io').replace(/\/$/, '')
   var AUTH_BASE = CFG.authBase || XANO_HOST + '/api:g1vmSLWh'
@@ -1243,16 +1243,19 @@
     this._loading = true
     this.setState('loading')
     // Replace-mode loads (filter/tab/page change, refresh) clear the previous
-    // items NOW, so only the loader shows while the new query is in flight —
-    // instead of leaving stale cards visible under the loader until the fetch
-    // resolves and render() swaps them. Append loads (load-more / infinite /
-    // all) keep prior items by design. The empty state is left to render() so a
-    // currently-empty feed doesn't flicker its "no results" block on refetch.
+    // items AND the empty state NOW, so only the loader shows while the new
+    // query is in flight — instead of leaving stale cards (or a resolved "no
+    // results" block) visible under the loader until the fetch resolves and
+    // render() re-decides. render() re-shows the empty state accurately once
+    // the new page lands. Append loads (load-more / infinite / all) keep prior
+    // items by design.
     if (!append) {
       var listNow = this.listEl || this.template.parentNode
       qa(listNow, '[wf-xano-item]').forEach(function (c) {
         c.remove()
       })
+      showStateEl(this.emptyEl, false)
+      this.root.classList.remove('is-wf-xano-empty')
     }
     try {
       var headers = { 'Content-Type': 'application/json' }

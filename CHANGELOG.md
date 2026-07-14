@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.16.2 — 2026-07-14
+
+### Fixed
+
+- **The empty ("no results") state is now hidden while a replace-mode load is in
+  flight** — completing v0.16.1. On a filter/tab/page change or `refresh()`,
+  `load()` hides the empty element (and drops `is-wf-xano-empty`) at load-start
+  alongside clearing the items, so a resolved "no results" block never lingers
+  under the loader during the refetch. `render()` re-shows it accurately once the
+  new page lands. Append loads are unaffected. Together with v0.16.1, an in-flight
+  replace-load now shows only the loader — no stale cards, no stale empty state.
+
 ## v0.16.1 — 2026-07-14
 
 ### Fixed
