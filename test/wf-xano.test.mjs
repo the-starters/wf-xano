@@ -1572,4 +1572,127 @@ const FULL_PAGE1 = {
   console.log('PASS 44: infinite tail sentinel')
 }
 
+// ---------- Test 45: favorites hydrate/toggle inside wf-algolia cards ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-123">
+      <button type="button" wf-xano-element="favorite" wf-xano-favorite-type="starter"
+        wf-xano-favorite-label-add="Save Starter" wf-xano-favorite-label-remove="Remove saved Starter"></button>
+    </article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = {
+    xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth',
+    tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false,
+  }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt-brand') }
+  w.fetch = (url, opts) => {
+    calls.push({ url, opts })
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano-brand' })
+    if (url.endsWith('/ids')) return makeRes({ ids: ['wf-123'] })
+    if (url.endsWith('/toggle')) return makeRes({ favorited: false })
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  const button = w.document.querySelector('[wf-xano-element="favorite"]')
+  assert.ok(await waitFor(() => button.classList.contains('is-wf-xano-favorited')), 'initial IDs hydrate Algolia card')
+  assert.equal(button.getAttribute('aria-pressed'), 'true')
+  assert.equal(button.getAttribute('aria-label'), 'Remove saved Starter')
+  button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+  assert.ok(await waitFor(() => calls.some((c) => c.url.endsWith('/toggle'))), 'toggle request sent')
+  assert.equal(button.classList.contains('is-wf-xano-favorited'), false, 'authoritative unsaved state applied')
+  const toggle = calls.find((c) => c.url.endsWith('/toggle'))
+  assert.deepEqual(JSON.parse(toggle.opts.body), { item_type: 'starter', item_id: 'wf-123' })
+  assert.equal(toggle.opts.headers.Authorization, 'Bearer xano-brand')
+  console.log('PASS 45: favorite hydration/toggle on wf-algolia card')
+}
+
+// ---------- Test 46: duplicate controls sync and rapid clicks dedupe ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-9"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+    <article data-wf-algolia-hit-objectid="wf-9"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let toggleCalls = 0
+  let releaseToggle
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano' })
+    if (url.endsWith('/ids')) return makeRes({ ids: [] })
+    if (url.endsWith('/toggle')) {
+      toggleCalls += 1
+      return new Promise((resolve) => { releaseToggle = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ favorited: true }) }) })
+    }
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  const buttons = [...w.document.querySelectorAll('[wf-xano-element="favorite"]')]
+  assert.ok(await waitFor(() => buttons.every((b) => b.getAttribute('aria-pressed') === 'false')), 'empty state hydrated')
+  buttons[0].dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+  buttons[1].dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+  assert.ok(await waitFor(() => toggleCalls === 1), 'same item has only one in-flight mutation')
+  assert.ok(buttons.every((b) => b.classList.contains('is-wf-xano-favorited')), 'optimistic state syncs every copy')
+  assert.ok(buttons.every((b) => b.classList.contains('is-wf-xano-loading')), 'loading state syncs every copy')
+  releaseToggle()
+  assert.ok(await waitFor(() => buttons.every((b) => !b.classList.contains('is-wf-xano-loading'))), 'both copies settle')
+  assert.ok(buttons.every((b) => b.classList.contains('is-wf-xano-favorited')), 'authoritative state stays synchronized')
+  console.log('PASS 46: duplicate favorite controls + rapid-click dedupe')
+}
+
+// ---------- Test 47: failed optimistic toggle rolls back and emits safe error ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-fail"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let errorDetail
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
+  w.document.addEventListener('wf-xano:favorite-error', (event) => { errorDetail = event.detail })
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano' })
+    if (url.endsWith('/ids')) return makeRes({ ids: [] })
+    if (url.endsWith('/toggle')) return makeRes({ message: 'private backend detail' }, false, 503)
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  const button = w.document.querySelector('[wf-xano-element="favorite"]')
+  assert.ok(await waitFor(() => button.getAttribute('aria-pressed') === 'false'), 'initial state hydrated')
+  button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+  assert.ok(await waitFor(() => errorDetail && errorDetail.item_id === 'wf-fail'), 'failure event emitted')
+  assert.equal(button.classList.contains('is-wf-xano-favorited'), false, 'optimistic state rolled back')
+  assert.deepEqual(errorDetail, { item_type: 'starter', item_id: 'wf-fail', status: 503 }, 'event excludes response body/auth data')
+  console.log('PASS 47: favorite failure rollback + safe error event')
+}
+
+// ---------- Test 48: dynamic wf-xano cards hydrate and member switches clear old state ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:list" wf-xano-auth="none">
+      <article wf-xano-element="template"><button wf-xano-element="favorite" wf-xano-favorite-type="starter"></button></article>
+    </div>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  let cookie = 'jwt-a'
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(cookie) }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano-' + JSON.parse(opts.body).token })
+    if (url.endsWith('/ids')) return makeRes({ ids: cookie === 'jwt-a' ? ['wf-a'] : [] })
+    if (url.endsWith('/api:g/list')) return makeRes(PAGE([{ id: 'wf-a' }], 1))
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item] button')?.classList.contains('is-wf-xano-favorited')), 'dynamic wf-xano card hydrated')
+  cookie = 'jwt-b'
+  await w.WfXano.favorites.refresh('starter')
+  const button = w.document.querySelector('[wf-xano-item] button')
+  assert.equal(button.classList.contains('is-wf-xano-favorited'), false, 'account switch clears previous member state')
+  assert.deepEqual(w.WfXano.favorites.ids('starter'), [], 'new member ID set replaces old member set')
+  console.log('PASS 48: dynamic wf-xano card + member-switch isolation')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

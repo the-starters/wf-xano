@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.17.0'
+  var VERSION = '0.18.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -454,6 +454,240 @@
       /* logged out / trade failure — surfaced by the first authed load */
     })
   }
+
+  /* ============================ FAVORITES ============================ */
+  // Generic member-scoped favorite toggles that can live inside cards
+  // rendered by either wf-xano or wf-algolia. The libraries stay independent:
+  // this module reads only stable DOM identifiers (`data-wf-xano-id` or
+  // wf-algolia's `data-wf-algolia-hit-objectid`) and persists through Xano.
+  var FAVORITE_SEL = '[wf-xano-element="favorite"], [wf-xano-favorite]'
+  var _favoriteSets = {} // item type -> Set<string>
+  var _favoriteLoads = {} // item type -> Promise<Set<string>>
+  var _favoriteToggles = {} // "type:id" -> Promise
+  var _favoriteSession = null
+  var _favoriteObserver = null
+
+  function favoriteControls(scope) {
+    var root = scope || document
+    var controls = qa(root, FAVORITE_SEL)
+    if (root.matches && root.matches(FAVORITE_SEL)) controls.unshift(root)
+    return controls
+  }
+
+  function favoriteType(el) {
+    var owner = el.closest ? el.closest('[wf-xano-favorite-type]') : null
+    return String((owner && owner.getAttribute('wf-xano-favorite-type')) || '').trim()
+  }
+
+  function favoriteId(el) {
+    var explicit = el.getAttribute('wf-xano-favorite-id')
+    if (explicit != null && String(explicit).trim()) return String(explicit).trim()
+    var xanoCard = el.closest ? el.closest('[data-wf-xano-id]') : null
+    if (xanoCard) return String(xanoCard.getAttribute('data-wf-xano-id') || '').trim()
+    var algoliaCard = el.closest ? el.closest('[data-wf-algolia-hit-objectid]') : null
+    return algoliaCard ? String(algoliaCard.getAttribute('data-wf-algolia-hit-objectid') || '').trim() : ''
+  }
+
+  function favoriteEndpoint(action) {
+    var override = action === 'ids' ? CFG.favoriteIdsSource : CFG.favoriteToggleSource
+    if (override) return resolveUrl(override)
+    var base = String(CFG.favoritesSource || '').replace(/\/$/, '')
+    return base ? resolveUrl(base + '/' + action) : null
+  }
+
+  function favoriteLabels(el, favorited) {
+    var add = el.getAttribute('wf-xano-favorite-label-add') || 'Save item'
+    var remove = el.getAttribute('wf-xano-favorite-label-remove') || 'Remove saved item'
+    el.setAttribute('aria-label', favorited ? remove : add)
+    el.setAttribute('aria-pressed', favorited ? 'true' : 'false')
+  }
+
+  function setFavoriteControl(el, favorited, loading) {
+    el.hidden = false
+    el.classList.toggle('is-wf-xano-favorited', !!favorited)
+    el.classList.toggle('is-wf-xano-loading', !!loading)
+    el.setAttribute('aria-busy', loading ? 'true' : 'false')
+    if ('disabled' in el) el.disabled = !!loading
+    favoriteLabels(el, !!favorited)
+  }
+
+  function hideFavoriteControls(type) {
+    favoriteControls(document).forEach(function (el) {
+      if (!type || favoriteType(el) === type) el.hidden = true
+    })
+  }
+
+  function syncFavoriteControls(type, id, favorited, loading) {
+    favoriteControls(document).forEach(function (el) {
+      if (favoriteType(el) !== type || favoriteId(el) !== id) return
+      setFavoriteControl(el, favorited, loading)
+    })
+  }
+
+  function paintFavoriteControls(scope) {
+    favoriteControls(scope).forEach(function (el) {
+      var type = favoriteType(el)
+      var id = favoriteId(el)
+      if (!type || !id) return
+      var set = _favoriteSets[type]
+      if (set) setFavoriteControl(el, set.has(id), !!_favoriteToggles[type + ':' + id])
+    })
+  }
+
+  function resetFavoriteState() {
+    _favoriteSets = {}
+    _favoriteLoads = {}
+    _favoriteToggles = {}
+    favoriteControls(document).forEach(function (el) {
+      var type = favoriteType(el)
+      var id = favoriteId(el)
+      if (type && id) setFavoriteControl(el, false, false)
+    })
+  }
+
+  async function syncFavoriteSession() {
+    var current = await memberstackSession().then(sessionFingerprint)
+    if (_favoriteSession != null && current !== _favoriteSession) resetFavoriteState()
+    _favoriteSession = current
+    return current
+  }
+
+  async function favoriteRequest(action, body) {
+    var url = favoriteEndpoint(action)
+    if (!url) throw new Error('WfXanoConfig.favoritesSource is required for favorite controls')
+    await syncFavoriteSession()
+    var res = await fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Authorization: 'Bearer ' + (await xanoToken()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body || {}),
+    })
+    var data = await res.json().catch(function () {
+      return null
+    })
+    if (!res.ok) throw Object.assign(new Error('wf-xano favorite ' + res.status), { status: res.status })
+    return data
+  }
+
+  function favoriteEvent(name, detail) {
+    document.dispatchEvent(new CustomEvent(name, { detail: detail }))
+  }
+
+  function refreshFavoriteLists(type) {
+    instances.slice().forEach(function (instance) {
+      var events = String(instance.root.getAttribute('wf-xano-refresh-on') || '')
+        .split(',')
+        .map(function (s) { return s.trim() })
+      var listType = instance.root.getAttribute('wf-xano-favorite-type')
+      if (events.indexOf('favorite') > -1 && (!listType || listType === type)) instance.refresh()
+    })
+  }
+
+  function ensureFavoriteType(type, force) {
+    if (!type) return Promise.resolve(new Set())
+    if (!force && _favoriteLoads[type]) return _favoriteLoads[type]
+    _favoriteLoads[type] = favoriteRequest('ids', { item_type: type })
+      .then(function (data) {
+        var ids = Array.isArray(data) ? data : data && data.ids
+        if (!Array.isArray(ids)) throw new Error('wf-xano favorite ids returned an invalid response')
+        var set = new Set(ids.map(String))
+        _favoriteSets[type] = set
+        paintFavoriteControls(document)
+        return set
+      })
+      .catch(function (err) {
+        delete _favoriteLoads[type]
+        if (err && (err.status === 401 || err.status === 403)) hideFavoriteControls(type)
+        favoriteEvent('wf-xano:favorite-error', { item_type: type, item_id: null, status: err && err.status })
+        throw err
+      })
+    return _favoriteLoads[type]
+  }
+
+  function toggleFavorite(el) {
+    var type = favoriteType(el)
+    var id = favoriteId(el)
+    if (!type || !id) {
+      console.warn('[wf-xano] favorite control is missing item type or id')
+      return Promise.resolve()
+    }
+    var key = type + ':' + id
+    if (_favoriteToggles[key]) return _favoriteToggles[key]
+    var set = _favoriteSets[type] || (_favoriteSets[type] = new Set())
+    var previous = set.has(id)
+    var optimistic = !previous
+    if (optimistic) set.add(id)
+    else set.delete(id)
+    syncFavoriteControls(type, id, optimistic, true)
+    var request = favoriteRequest('toggle', { item_type: type, item_id: id })
+      .then(function (data) {
+        var favorited = !!(data && data.favorited)
+        if (favorited) set.add(id)
+        else set.delete(id)
+        syncFavoriteControls(type, id, favorited, false)
+        favoriteEvent('wf-xano:favorite', { item_type: type, item_id: id, favorited: favorited })
+        refreshFavoriteLists(type)
+        return favorited
+      })
+      .catch(function (err) {
+        if (previous) set.add(id)
+        else set.delete(id)
+        syncFavoriteControls(type, id, previous, false)
+        favoriteEvent('wf-xano:favorite-error', { item_type: type, item_id: id, status: err && err.status })
+        throw err
+      })
+      .finally(function () {
+        delete _favoriteToggles[key]
+      })
+    _favoriteToggles[key] = request
+    return request
+  }
+
+  function initFavorites(scope) {
+    var controls = favoriteControls(scope)
+    if (!controls.length) return
+    if (!favoriteEndpoint('ids') || !favoriteEndpoint('toggle')) {
+      console.warn('[wf-xano] favorite controls found but WfXanoConfig.favoritesSource is missing')
+      hideFavoriteControls()
+      return
+    }
+    var types = {}
+    controls.forEach(function (el) {
+      var type = favoriteType(el)
+      if (type) types[type] = true
+    })
+    Object.keys(types).forEach(function (type) {
+      ensureFavoriteType(type).catch(function () {
+        /* surfaced through the DOM event; keep page boot non-fatal */
+      })
+    })
+    paintFavoriteControls(scope)
+    if (!_favoriteObserver && document.body && typeof MutationObserver === 'function') {
+      _favoriteObserver = new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          Array.prototype.forEach.call(record.addedNodes || [], function (node) {
+            if (!node || node.nodeType !== 1) return
+            initFavorites(node)
+            paintFavoriteControls(node)
+          })
+        })
+      })
+      _favoriteObserver.observe(document.body, { childList: true, subtree: true })
+    }
+  }
+
+  document.addEventListener('click', function (event) {
+    var el = event.target && event.target.closest ? event.target.closest(FAVORITE_SEL) : null
+    if (!el) return
+    event.preventDefault()
+    event.stopPropagation()
+    toggleFavorite(el).catch(function () {
+      /* UI rollback + event already handled */
+    })
+  })
 
   /* ============================ RESPONSE SHAPE ======================== */
   // Xano paged list -> { items, total, page, pages, hasMore }. Also tolerates
@@ -1665,6 +1899,7 @@
     _booted = true
     init(document)
     initShowMore(document)
+    initFavorites(document)
     _pendingCallbacks.splice(0).forEach(runCallback)
   }
 
@@ -1693,6 +1928,24 @@
     /** (Re)wire standalone show-more controls (non-list pages, or after another
      *  script binds content). Optional scope; defaults to the whole document. */
     initShowMore: initShowMore,
+    favorites: {
+      /** Wire favorite controls added by another renderer. */
+      init: initFavorites,
+      /** Re-fetch one item type (or every type currently on the page). */
+      refresh: function (type) {
+        if (type) return ensureFavoriteType(type, true)
+        var types = {}
+        favoriteControls(document).forEach(function (el) {
+          var t = favoriteType(el)
+          if (t) types[t] = true
+        })
+        return Promise.all(Object.keys(types).map(function (t) { return ensureFavoriteType(t, true) }))
+      },
+      /** Read the in-memory IDs for one item type. */
+      ids: function (type) {
+        return Array.from(_favoriteSets[type] || [])
+      },
+    },
     /** Queue (pre-boot) or immediately run (post-boot) a callback with the API. */
     push: function (fn) {
       if (typeof fn !== 'function') return
@@ -1737,6 +1990,8 @@
       readFilterValue: readFilterValue,
       paginationModel: paginationModel,
       isBlank: isBlank,
+      favoriteId: favoriteId,
+      favoriteType: favoriteType,
     },
   }
 

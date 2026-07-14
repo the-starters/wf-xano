@@ -97,6 +97,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Scriptable** — pre-load callback queue, `results`/`error` events, and an async `beforeRender`
   transform hook to filter/augment items before render.
 - **Zero dependencies** — one small file, plain JS, no build step required.
+- **Cross-renderer favorites** — authenticated optimistic save controls work inside both wf-xano
+  and wf-algolia cards, with duplicate-card synchronization and authoritative Xano state.
 
 ## JavaScript API (quick look)
 

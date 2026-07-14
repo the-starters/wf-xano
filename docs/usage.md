@@ -129,7 +129,45 @@ control the same `wf-xano-instance` value:
 Loading modes are `pagination` (default), `more`, `infinite`, and `all`. Any filter, search, or sort
 change resets append modes to page 1 so results cannot mix across different queries.
 
-## 6. Production checklist
+## 6. Favorites across wf-algolia and wf-xano
+
+Configure the authenticated favorites base:
+
+```html
+<script>
+  window.WfXanoConfig = {
+    xanoBase: 'https://YOUR-ID.xano.io',
+    authBase: 'https://YOUR-ID.xano.io/api:YOUR-AUTH-GROUP',
+    favoritesSource: 'opp30:brand/favorites'
+  }
+</script>
+```
+
+Add the same favorite control inside either renderer's card. wf-xano cards expose
+`data-wf-xano-id`; compatible wf-algolia cards expose `data-wf-algolia-hit-objectid`:
+
+```html
+<button type="button" wf-xano-element="favorite" wf-xano-favorite-type="starter"
+  wf-xano-favorite-label-add="Save Starter"
+  wf-xano-favorite-label-remove="Remove saved Starter">
+</button>
+```
+
+For a Saved list, return hydrated rows whose `id` is the same canonical identifier used by the
+toggle, then add `wf-xano-refresh-on="favorite"`:
+
+```html
+<div wf-xano-element="wrapper" wf-xano-instance="saved-starters"
+  wf-xano-source="opp30:brand/favorites/starters/list"
+  wf-xano-refresh-on="favorite" wf-xano-favorite-type="starter">
+  <article wf-xano-element="template">…same favorite button…</article>
+</div>
+```
+
+The Xano endpoints must derive identity from auth, validate allowed item types/IDs, and enforce a
+unique member/type/item constraint. Never accept a member or Brand ID from the browser.
+
+## 7. Production checklist
 
 1. Confirm the endpoint returns the expected paged shape and enforces authorization server-side.
 2. Use explicit HTTPS `xanoBase` and, for authenticated pages, `authBase` values.
