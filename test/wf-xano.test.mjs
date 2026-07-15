@@ -1864,4 +1864,239 @@ const FULL_PAGE1 = {
   console.log('PASS 54: configurable favorite active class targets marked visuals only')
 }
 
+// ---------- Test 55: reactive state is observable but cannot be mutated externally ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = (url, opts) => {
+    const payload = JSON.parse(opts.body)
+    calls.push(payload)
+    return makeRes(PAGE([{ id: calls.length, title: 'Row ' + calls.length }], 2, payload.page, 2))
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano), 'instance initialized')
+  const inst = root.__wfXano
+  assert.ok(await waitFor(() => inst.getState().status === 'success'), 'initial store reaches success')
+  const snapshot = inst.getState()
+  assert.equal(snapshot.data.items[0].title, 'Row 1')
+  snapshot.data.items[0].title = 'tampered'
+  snapshot.query.params.injected = 'nope'
+  assert.equal(inst.getState().data.items[0].title, 'Row 1', 'item snapshot is defensive')
+  assert.equal(inst.getState().query.params.injected, undefined, 'query snapshot is defensive')
+
+  const statuses = []
+  const unsubscribe = inst.subscribe((state) => state.status, (status) => statuses.push(status))
+  inst.on('results', (result) => { result.items[0].title = 'legacy listener mutation' })
+  await inst.setParam('status', 'Closed')
+  assert.deepEqual(statuses, ['success', 'loading', 'success'], 'selector receives only changed values')
+  assert.equal(inst.getState().query.params.status, 'Closed')
+  assert.equal(inst.getState().query.page, 1)
+  assert.equal(inst.getState().data.items[0].title, 'Row 2', 'legacy result listeners cannot mutate store records')
+  unsubscribe()
+  await inst.refresh()
+  assert.deepEqual(statuses, ['success', 'loading', 'success'], 'unsubscribe stops delivery')
+  console.log('PASS 55: defensive reactive state and selector subscriptions')
+}
+
+// ---------- Test 56: append state accumulates the same stable rows as the DOM ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  let call = 0
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = () => {
+    call += 1
+    return makeRes(PAGE([{ id: 'row-' + call, title: 'Row ' + call }], 2, call, 2))
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano), 'instance initialized')
+  const inst = root.__wfXano
+  assert.ok(await waitFor(() => inst.getState().status === 'success'))
+  await inst.load({ append: true })
+  assert.deepEqual(inst.getState().data.items.map((item) => item.id), ['row-1', 'row-2'])
+  const audit = inst.audit()
+  assert.equal(audit.ok, true)
+  assert.deepEqual(audit.differences, [])
+  assert.deepEqual(w.WfXano.audit()[0], audit, 'global audit delegates to the instance')
+  assert.equal(JSON.stringify(audit).includes('title'), false, 'audit excludes response fields')
+  console.log('PASS 56: append accumulation and privacy-safe shadow audit')
+}
+
+// ---------- Test 57: failed loads expose sanitized state and preserve legacy error events ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.console.error = () => {}
+  w.fetch = () => makeRes({ private_detail: 'do not expose' }, false, 503)
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano), 'instance initialized')
+  const inst = root.__wfXano
+  assert.ok(await waitFor(() => inst.getState().status === 'error'))
+  const state = inst.getState()
+  assert.deepEqual(state.error, { name: 'Error', status: 503 })
+  assert.equal(JSON.stringify(state).includes('private_detail'), false, 'response body is excluded from state')
+  assert.deepEqual(state.data.items, [])
+  console.log('PASS 57: sanitized error state')
+}
+
+// ---------- Test 58: stateChange metadata is privacy-safe and destroy is terminal ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, title: 'Private row title' }], 1))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano), 'instance initialized')
+  const inst = root.__wfXano
+  assert.ok(await waitFor(() => inst.getState().status === 'success'))
+  const changes = []
+  inst.on('stateChange', (change) => changes.push(change))
+  const subscribed = []
+  inst.subscribe((state) => state.status, (status) => subscribed.push(status))
+  inst.destroy()
+  assert.equal(inst.getState().status, 'destroyed')
+  assert.equal(subscribed.at(-1), 'destroyed')
+  assert.equal(changes.at(-1).reason, 'destroy')
+  assert.equal(JSON.stringify(changes).includes('Private row title'), false)
+  assert.equal(w.WfXano.instances.length, 0)
+  console.log('PASS 58: privacy-safe stateChange and terminal destroy state')
+}
+
+// ---------- Test 59: account switches clear member-scoped store data before replacement ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP.replace('wf-xano-auth="none"', 'wf-xano-auth="memberstack"'), { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a-jwt'
+  let listCalls = 0
+  let releaseSecond
+  w.WfXanoConfig = {
+    xanoBase: 'https://h.xano.io',
+    authBase: 'https://h.xano.io/api:auth',
+    tradeTokenPath: '/trade',
+    preAuth: false,
+    debug: false,
+  }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'token-for-' + session })
+    listCalls += 1
+    if (listCalls === 1) return makeRes(PAGE([{ id: 'member-a-row', title: 'A' }], 1))
+    return new Promise((resolve) => {
+      releaseSecond = () => resolve({ ok: true, status: 200, json: () => Promise.resolve(PAGE([{ id: 'member-b-row', title: 'B' }], 1)) })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().status === 'success'))
+  const inst = root.__wfXano
+  assert.equal(inst.getState().data.items[0].id, 'member-a-row')
+  session = 'member-b-jwt'
+  const pending = inst.refresh()
+  assert.ok(await waitFor(() => listCalls === 2), 'replacement request is pending')
+  assert.deepEqual(inst.getState().data.items, [], 'prior member snapshot cleared before replacement resolves')
+  releaseSecond()
+  await pending
+  assert.equal(inst.getState().data.items[0].id, 'member-b-row')
+  console.log('PASS 59: account-switch store isolation')
+}
+
+// ---------- Test 60: account switch clears and reloads every authenticated instance ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="opp30:a/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="opp30:b/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a-jwt'
+  const listCalls = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'token-for-' + session })
+    const key = /a\/list/.test(url) ? 'a' : 'b'
+    listCalls.push(key + ':' + session)
+    return makeRes(PAGE([{ id: key + '-' + session, title: key.toUpperCase() }], 1))
+  }
+  w.eval(LIB)
+  const lists = w.document.querySelectorAll('[wf-xano-list]')
+  assert.ok(await waitFor(() => lists[0].__wfXano && lists[1].__wfXano))
+  const instA = lists[0].__wfXano
+  const instB = lists[1].__wfXano
+  assert.ok(await waitFor(() => instA.getState().status === 'success' && instB.getState().status === 'success'))
+  assert.equal(instA.getState().data.items[0].id, 'a-member-a-jwt')
+  // Only B explicitly refreshes. The auth reset must clear and reload A too.
+  session = 'member-b-jwt'
+  await instB.refresh()
+  assert.ok(await waitFor(() => instA.getState().data.items[0]?.id === 'a-member-b-jwt'))
+  const a = instA.getState()
+  assert.equal(a.status, 'success', 'other authenticated instance reloads to success')
+  assert.equal(a.data.items[0].id, 'a-member-b-jwt', 'other instance refills with new member data')
+  assert.equal(instB.getState().data.items[0].id, 'b-member-b-jwt', 'reloading instance refills with new member data')
+  assert.ok(listCalls.includes('a:member-b-jwt'), 'account switch triggers the other authenticated list request')
+  assert.equal(instA.audit().ok, true, 'reloaded list DOM and store remain aligned')
+  console.log('PASS 60: account switch clears and reloads every authenticated instance')
+}
+
+// ---------- Test 61: account switch resets page/filters to baseline before reload ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="opp30:a/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="opp30:b/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a-jwt'
+  const requests = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.fetch = (url, req) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'token-for-' + session })
+    const key = /a\/list/.test(url) ? 'a' : 'b'
+    const body = req && req.body ? JSON.parse(req.body) : {}
+    requests.push({ key, session, page: body.page, kind: body.kind })
+    // Page 2 for account A only has data on account A; account B has 1 page.
+    return makeRes(PAGE([{ id: key + '-' + session, title: key.toUpperCase() }], 30, body.page || 1, 3))
+  }
+  w.eval(LIB)
+  const lists = w.document.querySelectorAll('[wf-xano-list]')
+  assert.ok(await waitFor(() => lists[0].__wfXano && lists[1].__wfXano))
+  const instA = lists[0].__wfXano
+  const instB = lists[1].__wfXano
+  assert.ok(await waitFor(() => instA.getState().status === 'success' && instB.getState().status === 'success'))
+  // A navigates to page 2 with a member-A filter before the account switch.
+  await instA.setParam('kind', 'alpha')
+  await instA.goToPage(2)
+  assert.ok(await waitFor(() => instA.getState().query.page === 2 && instA.getParams().kind === 'alpha'))
+  requests.length = 0
+  session = 'member-b-jwt'
+  await instB.refresh()
+  assert.ok(await waitFor(() => instA.getState().data.items[0]?.id === 'a-member-b-jwt'))
+  const reloadA = requests.filter((r) => r.key === 'a' && r.session === 'member-b-jwt').pop()
+  assert.ok(reloadA, 'A reloads on the account switch')
+  assert.equal(reloadA.page, 1, 'reload requests page 1, not the stale page 2')
+  assert.equal(reloadA.kind, undefined, 'reload drops the previous-account filter')
+  assert.equal(instA.getState().query.page, 1, 'store query resets to page 1')
+  assert.deepEqual(instA.getParams(), {}, 'params reset to the static baseline')
+  assert.equal(instA.audit().ok, true, 'reset reload keeps DOM and store aligned')
+  console.log('PASS 61: account switch resets page/filters to baseline before reload')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

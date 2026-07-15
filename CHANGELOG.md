@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.19.0 — Unreleased
+
+### Added
+
+- One observable reactive state store per list instance, exposed through defensive `getState()`
+  snapshots and selector-aware `subscribe()` callbacks.
+- Privacy-safe `stateChange` lifecycle metadata and a stable-ID/aggregate-only `audit()` shadow
+  comparison for validating the store against legacy DOM and query projections.
+- Source/minified reactive-runtime parity coverage. Existing rendering, request, event, and markup
+  contracts remain the compatibility control.
+
+### Security
+
+- Store errors exclude response bodies, tokens, and raw server messages. A changed Memberstack
+  session clears rendered rows and store snapshots for every authenticated list, then reloads all
+  lists through one fresh token trade before the next account's data is accepted.
+
 ## v0.18.3 — 2026-07-15
 
 ### Added

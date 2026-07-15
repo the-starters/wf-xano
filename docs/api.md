@@ -29,6 +29,7 @@ script executes before **or** after the library loads (the same pattern as
 | `init(scope?)` | Scan `scope` (including the scope element itself; default `document`) and initialize new wrappers. |
 | `refresh(rootEl?)` | Re-fetch every list, or just the one owning `rootEl`. |
 | `destroy(rootEl?)` | Tear down every list, or just the one owning `rootEl`. |
+| `audit(rootEl?)` | Compare legacy DOM/query projections with the reactive store using stable IDs and aggregate metadata only. Returns one report or an array. |
 | `favorites.init(scope?)` | Wire favorite controls added by another renderer. A MutationObserver normally does this automatically. |
 | `favorites.refresh(type?)` | Re-fetch saved IDs for one type or every type present on the page. |
 | `favorites.ids(type)` | Return a copy of the in-memory saved IDs for one type. |
@@ -79,6 +80,10 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `getParams()` | Return a copy of all current request parameters. |
 | `clearParams()` | Restore the static `wf-xano-param-*` baseline and reload page 1. |
 | `userParams()` | Return only parameters that differ from the static baseline. |
+| `getState()` | Return a defensive snapshot of status, data, query, local, mutation, safe error metadata, and revision. |
+| `subscribe(handler)` | Subscribe to the complete state; immediately receives the current snapshot. Returns an unsubscribe function. |
+| `subscribe(selector, handler)` | Subscribe to a selected state slice. The handler runs only when the selected value changes by identity. Returns an unsubscribe function. |
+| `audit()` | Return a privacy-safe comparison of rendered stable IDs/query metadata against the store projection. |
 | `on(event, handler)` | Subscribe — see [events](#events). Returns the instance. |
 | `off(event, handler)` | Unsubscribe. |
 | `destroy()` | Remove listeners and rendered items, unregister the instance. |
@@ -90,6 +95,7 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `results` | `{ items, total, page, pages, hasMore }` | After a successful render. Late subscribers immediately receive the last result. |
 | `error` | `Error` | After a failed request. |
 | `beforeRender` | `(items, result)` | **Transform hook** — runs between fetch and render. Return a replacement items array (sync or async) to filter, augment, or reorder what renders. |
+| `stateChange` | `{ reason, previous: { status, revision }, current: { status, revision } }` | Privacy-safe metadata after a store transition. Use `subscribe` when the state value itself is needed. |
 
 ```js
 // Example: client-side augmentation before render
@@ -99,6 +105,43 @@ instance.on('beforeRender', async (items) => {
 })
 // …then use wf-xano-if="applied" in the card template.
 ```
+
+### Reactive state (v0.19)
+
+The store is an observable projection of Xano-backed list state. Xano remains authoritative; changing
+a snapshot returned by `getState()` never changes the instance or sends a request.
+
+```js
+var unsubscribe = instance.subscribe(
+  function (state) { return state.status },
+  function (status) {
+    console.log('list status:', status)
+  }
+)
+
+var snapshot = instance.getState()
+console.log(snapshot.data.total, snapshot.query.params)
+
+// Later, for example during page teardown:
+unsubscribe()
+```
+
+State shape:
+
+```js
+{
+  status: 'idle' | 'loading' | 'success' | 'error' | 'destroyed',
+  data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+  query: { params: {}, page: 1, perPage: 20 },
+  local: {},
+  mutation: {},
+  error: null | { name: 'Error', status: 500 },
+  revision: 0
+}
+```
+
+The state error intentionally excludes server response bodies, authentication values, and raw error
+messages. The existing `error` event still receives the original `Error` for compatibility.
 
 ### Favorite DOM events
 
@@ -120,6 +163,10 @@ With `wf-xano-auth="memberstack"` (the default), the library:
 
 The token is cached in memory and automatically discarded whenever the live Memberstack session
 cookie changes, including account switches and JWT rotation.
+
+When that session changes, every authenticated list immediately clears its rendered rows and
+reactive snapshot, cancels any superseded request, and reloads through the new shared token. This
+prevents another account's rows from remaining visible or drifting from `getState()`.
 
 The handshake is optimized for cold boot (since v0.5.0):
 
