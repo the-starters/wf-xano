@@ -184,7 +184,7 @@ Current development measurements (2026-07-15):
 - provisional v0.19 budget: no more than 42,000 minified bytes before release;
 - v0.20.0 development minified build: 42,293 bytes; provisional v0.20 budget: 44,000 bytes;
 - v0.21.0 development minified build: 49,478 bytes; provisional v0.21 budget: 50,000 bytes;
-- v0.22.0 development minified build: 53,617 bytes; provisional v0.22 budget: 54,000 bytes;
+- v0.22.0 development minified build: 53,780 bytes; provisional v0.22 budget: 54,000 bytes;
   the increase covers keyed reconciliation, exact rollback overlays, and authoritative response
   handling while the cold-load request count remains unchanged;
 - cold list load: one list request, unchanged; store transitions add no request or render;
