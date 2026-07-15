@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.18.3'
+  var VERSION = '0.19.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -114,6 +114,36 @@
     var list = qa(card, sel)
     if (card.matches && card.matches(sel)) list.unshift(card)
     return list
+  }
+
+  /** Clone JSON-shaped runtime state so page code cannot mutate the store. */
+  function cloneStateValue(value) {
+    if (Array.isArray(value)) return value.map(cloneStateValue)
+    if (value && typeof value === 'object') {
+      var copy = {}
+      Object.keys(value).forEach(function (key) {
+        copy[key] = cloneStateValue(value[key])
+      })
+      return copy
+    }
+    return value
+  }
+
+  /** Freeze the private store so selectors cannot mutate it by reference. */
+  function freezeStateValue(value) {
+    if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
+    Object.keys(value).forEach(function (key) {
+      freezeStateValue(value[key])
+    })
+    return Object.freeze(value)
+  }
+
+  /** Errors exposed through state deliberately exclude response bodies/tokens. */
+  function publicError(err) {
+    if (!err) return null
+    var out = { name: err.name || 'Error' }
+    if (err.status != null) out.status = err.status
+    return out
   }
 
   /** Selector for a structural role in BOTH grammars: the canonical
@@ -437,7 +467,10 @@
       // no Memberstack profile/localStorage metadata is trusted as identity.
       var ownerSession = await _auth.session
       var liveSession = await memberstackSession().then(sessionFingerprint)
-      if (liveSession !== ownerSession) _auth = null
+      if (liveSession !== ownerSession) {
+        _auth = null
+        clearAuthenticatedStoreSnapshots()
+      }
     }
     if (!_auth) _auth = startAuth()
     return _auth.token
@@ -1106,6 +1139,19 @@
   /* ============================ INSTANCE ============================== */
   var instances = []
 
+  /** A changed Memberstack session invalidates every member-scoped client
+   *  projection before a fresh token can return another account's data. */
+  function clearAuthenticatedStoreSnapshots() {
+    ;(instances || []).forEach(function (instance) {
+      if (!instance.auth || !instance._state) return
+      instance._lastResult = null
+      instance._transition(
+        { data: { items: [], total: 0, page: 1, pages: 1, hasMore: false }, error: null },
+        'auth:change',
+      )
+    })
+  }
+
   function Instance(root) {
     this.ok = false
     this.root = root
@@ -1158,6 +1204,16 @@
     this._seq = 0
     this._pages = 1
     this._lastResult = null
+    this._subscribers = []
+    this._state = {
+      status: 'idle',
+      data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+      query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
+      local: {},
+      mutation: {},
+      error: null,
+      revision: 0,
+    }
     this._ac = typeof AbortController === 'function' ? new AbortController() : null
     this._fetchAc = null
 
@@ -1188,6 +1244,10 @@
     this.tagTemplate = this.q(elSel('tag'))
     if (this.tagTemplate) this.tagTemplate.style.display = 'none'
     if (this.urlSync) this.restoreFromUrl()
+    this._transition(
+      { query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } },
+      'init',
+    )
     this.bindControls()
     this.load()
   }
@@ -1218,6 +1278,64 @@
   }
   Instance.prototype.q = function (sel) {
     return this.qa(sel)[0] || null
+  }
+
+  /** One transition path owns the immutable runtime store. Legacy instance
+   *  fields remain the request/render authority during the compatibility
+   *  phase; this store is their observable shadow projection. */
+  Instance.prototype._transition = function (patch, reason) {
+    var previous = this._state
+    var next = Object.assign({}, previous, patch || {})
+    ;['data', 'query', 'local', 'mutation'].forEach(function (key) {
+      if (patch && patch[key]) next[key] = Object.assign({}, previous[key], patch[key])
+    })
+    next.revision = previous.revision + 1
+    this._state = freezeStateValue(next)
+    this._subscribers.slice().forEach(function (sub) {
+      var selected
+      try {
+        selected = sub.selector(next)
+        if (Object.is(selected, sub.last)) return
+        var prior = sub.last
+        sub.last = selected
+        sub.handler(cloneStateValue(selected), cloneStateValue(prior))
+      } catch (e) {
+        /* subscriber error — non-fatal */
+      }
+    })
+    this.emit('stateChange', {
+      reason: reason || 'transition',
+      previous: { status: previous.status, revision: previous.revision },
+      current: { status: next.status, revision: next.revision },
+    })
+    return next
+  }
+
+  /** Defensive snapshot of the reactive runtime state. */
+  Instance.prototype.getState = function () {
+    return cloneStateValue(this._state)
+  }
+
+  /** Subscribe to the whole state, or to a selected slice. Returns an
+   *  unsubscribe function and immediately delivers the current value. */
+  Instance.prototype.subscribe = function (selector, handler) {
+    if (typeof selector === 'function' && typeof handler !== 'function') {
+      handler = selector
+      selector = function (state) { return state }
+    }
+    if (typeof selector !== 'function' || typeof handler !== 'function') return function () {}
+    var sub = { selector: selector, handler: handler, last: selector(this._state) }
+    this._subscribers.push(sub)
+    try {
+      handler(cloneStateValue(sub.last), undefined)
+    } catch (e) {
+      /* subscriber error — non-fatal */
+    }
+    var self = this
+    return function () {
+      var index = self._subscribers.indexOf(sub)
+      if (index > -1) self._subscribers.splice(index, 1)
+    }
   }
 
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
@@ -1496,6 +1614,7 @@
     if (this._loading || (this._lastResult && !this._lastResult.hasMore)) return
     var previousPage = this.page
     this.page += 1
+    this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:page')
     return this.load({ append: true, previousPage: previousPage })
   }
 
@@ -1506,11 +1625,13 @@
     if (value == null || value === '' || value === '*') delete this.params[field]
     else this.params[field] = value
     this.page = 1
+    this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:param')
     return this.load()
   }
 
   Instance.prototype.goToPage = function (page) {
     this.page = page
+    this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:page')
     return this.load()
   }
 
@@ -1524,6 +1645,7 @@
   Instance.prototype.clearParams = function () {
     this.params = Object.assign({}, this.baseParams)
     this.page = 1
+    this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:clear')
     this.hydrateControls()
     return this.load()
   }
@@ -1643,6 +1765,14 @@
     this._fetchAc = typeof AbortController === 'function' ? new AbortController() : null
     this._loading = true
     this.setState('loading')
+    this._transition(
+      {
+        status: 'loading',
+        query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
+        error: null,
+      },
+      'load:start',
+    )
     // Replace-mode loads (filter/tab/page change, refresh) clear the previous
     // items AND the empty state NOW, so only the loader shows while the new
     // query is in flight — instead of leaving stale cards (or a resolved "no
@@ -1700,6 +1830,23 @@
       this.setState('idle')
       this._loading = false
       this._lastResult = result
+      var resultItems = cloneStateValue(result.items)
+      var storedItems = append ? this._state.data.items.concat(resultItems) : resultItems
+      this._transition(
+        {
+          status: 'success',
+          data: {
+            items: storedItems,
+            total: result.total,
+            page: result.page,
+            pages: result.pages,
+            hasMore: result.hasMore,
+          },
+          query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
+          error: null,
+        },
+        'load:success',
+      )
       if (this.urlSync && !append) this.syncUrl()
       this.emit('results', result)
       // `all` mode: keep pulling pages until the source is exhausted.
@@ -1715,6 +1862,15 @@
       } else {
         this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
       }
+      this._transition(
+        {
+          status: 'error',
+          data: append ? this._state.data : { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+          query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
+          error: publicError(err),
+        },
+        'load:error',
+      )
       this.emit('error', err)
     }
   }
@@ -1878,6 +2034,34 @@
     return this.load()
   }
 
+  /** Privacy-safe shadow comparison: stable IDs and aggregate metadata only. */
+  Instance.prototype.audit = function () {
+    var list = this.template ? this.listEl || this.template.parentNode : this.root
+    var domIds = qa(list, '[wf-xano-item]').map(function (el) {
+      return String(el.getAttribute('data-wf-xano-id') || '')
+    })
+    var storeIds = this._state.data.items.map(function (item) {
+      return item && item.id != null ? String(item.id) : ''
+    })
+    var differences = []
+    if (JSON.stringify(domIds) !== JSON.stringify(storeIds)) differences.push('item_ids')
+    if (this.page !== this._state.query.page) differences.push('page')
+    if (JSON.stringify(this.params) !== JSON.stringify(this._state.query.params)) differences.push('params')
+    return {
+      key: this.key,
+      ok: differences.length === 0,
+      differences: differences,
+      legacy: { itemIds: domIds, page: this.page, paramFields: Object.keys(this.params).sort() },
+      store: {
+        itemIds: storeIds,
+        page: this._state.query.page,
+        paramFields: Object.keys(this._state.query.params).sort(),
+        status: this._state.status,
+        revision: this._state.revision,
+      },
+    }
+  }
+
   /** Tear down: abort listeners, drop rendered items, unregister. */
   Instance.prototype.destroy = function () {
     this._seq++ // invalidate any in-flight load
@@ -1896,6 +2080,8 @@
     delete this.root.__wfXano
     var i = instances.indexOf(this)
     if (i > -1) instances.splice(i, 1)
+    this._transition({ status: 'destroyed' }, 'destroy')
+    this._subscribers = []
     this.listeners = {}
   }
 
@@ -2005,6 +2191,14 @@
           return i.key === key
         })[0] || null
       )
+    },
+    /** Compare legacy DOM/query projections with the shadow runtime store. */
+    audit: function (root) {
+      if (root) {
+        var instance = instanceForElement(root)
+        return instance ? instance.audit() : null
+      }
+      return instances.map(function (instance) { return instance.audit() })
     },
     /** Destroy all instances (or one root element's instance). */
     destroy: function (root) {
