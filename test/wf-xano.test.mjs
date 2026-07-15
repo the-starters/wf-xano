@@ -2626,4 +2626,39 @@ const FULL_PAGE1 = {
   console.log('PASS 75: full authoritative response reconciles without redundant self refresh')
 }
 
+// ---------- Test 76: focused non-text control survives keyed optimistic reconciliation ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><input type="checkbox" class="toggle"><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status" wf-xano-action-response="item">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 7, status: 'Live' }], 1))
+    : makeRes({ id: 7, status: 'Closed' })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  // A non-text control the user focuses (not the action control, which is disabled while pending).
+  const toggle = card.querySelector('input.toggle')
+  // Mimic Chromium/WebKit: selectionStart/selectionEnd getters throw on non-text inputs.
+  Object.defineProperty(toggle, 'selectionStart', { configurable: true, get() { throw new w.DOMException('not applicable', 'InvalidStateError') } })
+  Object.defineProperty(toggle, 'selectionEnd', { configurable: true, get() { throw new w.DOMException('not applicable', 'InvalidStateError') } })
+  toggle.focus()
+  assert.equal(w.document.activeElement, toggle, 'non-text control is focused before reconciliation')
+  assert.equal(await root.__wfXano.runAction(card.querySelector('button')), true, 'optimistic reconciliation does not throw while a non-text control is focused')
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind]').textContent, 'Closed')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  assert.notEqual(root.__wfXano.getState().status, 'error', 'list is not wrongly cleared')
+  assert.equal(w.document.activeElement, root.querySelector('[wf-xano-item] input.toggle'), 'focus on the non-text control is preserved through reconciliation')
+  console.log('PASS 76: focused non-text control survives keyed optimistic reconciliation')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

@@ -2391,8 +2391,12 @@
     })
     var focused = document.activeElement
     var selection = null
-    if (focused && typeof focused.selectionStart === 'number') {
-      selection = { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection }
+    if (focused) {
+      try {
+        if (typeof focused.selectionStart === 'number') {
+          selection = { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection }
+        }
+      } catch (e) { selection = null }
     }
     var existing = {}
     qa(list, '[wf-xano-item]').filter(function (card) { return ownerRoot(card) === self.root }).forEach(function (card) {
