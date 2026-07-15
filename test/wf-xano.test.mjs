@@ -1791,7 +1791,7 @@ const FULL_PAGE1 = {
   console.log('PASS 52: auth-failed refresh clears the set so later cards are not un-hidden')
 }
 
-// ---------- Test 53: card bubble handlers cannot swallow favorite clicks ----------
+// ---------- Test 53: card capture handlers cannot swallow favorite clicks ----------
 {
   const dom = new JSDOM(`<!doctype html><html><body>
     <a id="card" href="/profile" data-wf-algolia-hit-objectid="wf-click">
@@ -1805,7 +1805,7 @@ const FULL_PAGE1 = {
   card.addEventListener('click', (event) => {
     cardClicks += 1
     event.stopPropagation()
-  })
+  }, true)
   w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
   w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
   w.fetch = (url) => {
@@ -1824,7 +1824,7 @@ const FULL_PAGE1 = {
   assert.ok(await waitFor(() => toggleCalls === 1), 'directly bound favorite sends the toggle')
   assert.equal(cardClicks, 0, 'favorite click does not trigger the surrounding card navigation handler')
   assert.equal(button.getAttribute('aria-pressed'), 'true', 'authoritative saved state applied')
-  console.log('PASS 53: direct favorite listener survives card click propagation')
+  console.log('PASS 53: document capture favorite listener precedes card interception')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

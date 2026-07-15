@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.18.2 — 2026-07-15
+
+### Fixed
+
+- Favorite clicks are now intercepted during document capture, before capture-phase card handlers
+  can consume the event or navigate away. This covers Webflow/wf-algolia cards that intercept
+  clicks before a listener on the favorite control itself can run.
+
 ## v0.18.1 — 2026-07-15
 
 ### Fixed

@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.18.1'
+  var VERSION = '0.18.2'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -467,7 +467,6 @@
   var _favoriteAuthFailed = {} // item type -> true once hydration hit an auth failure
   var _favoriteSession = null
   var _favoriteObserver = null
-  var _favoriteBound = typeof WeakSet === 'function' ? new WeakSet() : null
 
   function favoriteControls(scope) {
     var root = scope || document
@@ -658,21 +657,6 @@
     return request
   }
 
-  function bindFavoriteControl(el) {
-    if ((_favoriteBound && _favoriteBound.has(el)) || (!_favoriteBound && el.__wfXanoFavoriteBound)) return
-    if (_favoriteBound) _favoriteBound.add(el)
-    else el.__wfXanoFavoriteBound = true
-    // Bind on the control itself so card/link bubble handlers cannot swallow
-    // the click before it reaches wf-xano's favorite logic.
-    el.addEventListener('click', function (event) {
-      event.preventDefault()
-      event.stopPropagation()
-      toggleFavorite(el).catch(function () {
-        /* UI rollback + event already handled */
-      })
-    })
-  }
-
   function ensureFavoriteObserver() {
     if (_favoriteObserver || !document.body || typeof MutationObserver !== 'function') return
     _favoriteObserver = new MutationObserver(function (records) {
@@ -699,7 +683,6 @@
     if (!controls.length) return
     var types = {}
     controls.forEach(function (el) {
-      bindFavoriteControl(el)
       var type = favoriteType(el)
       if (type) types[type] = true
     })
@@ -714,6 +697,18 @@
     })
     paintFavoriteControls(scope)
   }
+
+  // Capture at document level so Webflow/wf-algolia card handlers cannot
+  // intercept the click on an ancestor before the favorite toggle runs.
+  document.addEventListener('click', function (event) {
+    var el = event.target && event.target.closest ? event.target.closest(FAVORITE_SEL) : null
+    if (!el) return
+    event.preventDefault()
+    event.stopPropagation()
+    toggleFavorite(el).catch(function () {
+      /* UI rollback + event already handled */
+    })
+  }, true)
 
   /* ============================ RESPONSE SHAPE ======================== */
   // Xano paged list -> { items, total, page, pages, hasMore }. Also tolerates
