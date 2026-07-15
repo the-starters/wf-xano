@@ -14,7 +14,8 @@
 ### Security
 
 - Store errors exclude response bodies, tokens, and raw server messages. A changed Memberstack
-  session clears member-scoped store snapshots before the next account's response is accepted.
+  session clears rendered rows and store snapshots for every authenticated list, then reloads all
+  lists through one fresh token trade before the next account's data is accepted.
 
 ## v0.18.3 — 2026-07-15
 

@@ -164,6 +164,10 @@ With `wf-xano-auth="memberstack"` (the default), the library:
 The token is cached in memory and automatically discarded whenever the live Memberstack session
 cookie changes, including account switches and JWT rotation.
 
+When that session changes, every authenticated list immediately clears its rendered rows and
+reactive snapshot, cancels any superseded request, and reloads through the new shared token. This
+prevents another account's rows from remaining visible or drifting from `getState()`.
+
 The handshake is optimized for cold boot (since v0.5.0):
 
 - The live session cookie fingerprint is the authoritative cache key. No member-profile lookup or

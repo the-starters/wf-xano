@@ -460,16 +460,20 @@
     return auth
   }
 
-  async function xanoToken() {
+  async function xanoToken(requestingInstance) {
     if (_auth) {
       // The live session cookie is the authoritative owner key. A cookie
       // change (account switch or JWT rotation) always forces a fresh trade;
       // no Memberstack profile/localStorage metadata is trusted as identity.
-      var ownerSession = await _auth.session
+      var cachedAuth = _auth
+      var ownerSession = await cachedAuth.session
       var liveSession = await memberstackSession().then(sessionFingerprint)
-      if (liveSession !== ownerSession) {
+      // Another concurrent list may already have replaced the shared auth
+      // entry while this call awaited the session. Only the call that still
+      // owns the stale entry performs the one-time account-change reset.
+      if (liveSession !== ownerSession && _auth === cachedAuth) {
         _auth = null
-        clearAuthenticatedStoreSnapshots()
+        clearAuthenticatedStoreSnapshots(requestingInstance)
       }
     }
     if (!_auth) _auth = startAuth()
@@ -1141,13 +1145,44 @@
 
   /** A changed Memberstack session invalidates every member-scoped client
    *  projection before a fresh token can return another account's data. */
-  function clearAuthenticatedStoreSnapshots() {
+  function clearAuthenticatedStoreSnapshots(requestingInstance) {
+    var reload = []
     ;(instances || []).forEach(function (instance) {
       if (!instance.auth || !instance._state) return
+      // The instance that discovered the change is already in load(). Every
+      // other member-scoped list must invalidate an old in-flight response
+      // and reload from the newly traded account rather than retaining old
+      // member DOM beside an empty store.
+      if (instance !== requestingInstance) {
+        instance._seq++
+        if (instance._fetchAc) instance._fetchAc.abort()
+        instance._loading = false
+        reload.push(instance)
+      }
       instance._lastResult = null
-      var patch = { data: { items: [], total: 0, page: 1, pages: 1, hasMore: false }, error: null }
-      if (!instance._loading) patch.status = 'idle'
-      instance._transition(patch, 'auth:change')
+      if (instance.template) {
+        qa(instance.listEl || instance.template.parentNode, '[wf-xano-item]').forEach(function (card) {
+          card.remove()
+        })
+      }
+      showStateEl(instance.emptyEl, false)
+      instance.root.classList.remove('is-wf-xano-empty')
+      instance.setState('loading')
+      instance._transition(
+        {
+          status: 'loading',
+          data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+          error: null,
+        },
+        'auth:change',
+      )
+    })
+    // xanoToken() installs the new shared auth entry before this microtask;
+    // all reloads therefore reuse one fresh trade instead of racing trades.
+    Promise.resolve().then(function () {
+      reload.forEach(function (instance) {
+        if (instance.ok && instance.root.__wfXano === instance) instance.load()
+      })
     })
   }
 
@@ -1795,7 +1830,7 @@
     }
     try {
       var headers = {}
-      if (this.auth) headers.Authorization = 'Bearer ' + (await xanoToken())
+      if (this.auth) headers.Authorization = 'Bearer ' + (await xanoToken(this))
       var payload = {}
       Object.keys(this.params).forEach(function (k) {
         payload[k] = self.params[k]
