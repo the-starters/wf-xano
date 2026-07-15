@@ -2998,4 +2998,72 @@ const FULL_PAGE1 = {
   console.log('PASS 86: navigation-away and destroy abort pending forms without stale terminal state')
 }
 
+// ---------- Test 87: keyed refresh rebases reused rendered-record form snapshot ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+    <article wf-xano-element="template"><form wf-xano-form="row" wf-xano-form-source="api:update" wf-xano-form-auth="none">
+      <input wf-xano-field="record_id" wf-xano-bind="id"><input wf-xano-field="title" wf-xano-bind="title"><button type="submit">Save</button>
+    </form></article></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let title = 'Authoritative'
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 9, title }], 1))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] form')))
+  const inst = root.__wfXano
+  assert.deepEqual(inst.getState().form['row:9'].initial, { record_id: '9', title: 'Authoritative' })
+  // A refresh where Xano returns a normalized value must rebase the snapshot so
+  // the store, dirty detection, and DOM stay in sync.
+  title = 'Normalized'
+  await inst.refresh()
+  assert.ok(await waitFor(() => inst.getState().form['row:9'].current.title === 'Normalized'))
+  assert.deepEqual(inst.getState().form['row:9'].initial, { record_id: '9', title: 'Normalized' }, 'reused card rebases initial to authoritative value')
+  assert.deepEqual(inst.getState().form['row:9'].dirty, {}, 'rebased form is clean, not spuriously dirty')
+  assert.equal(root.querySelector('[wf-xano-item] input[wf-xano-field="title"]').value, 'Normalized')
+  // An in-flight user edit is preserved and stays dirty across the next refresh.
+  const titleInput = root.querySelector('[wf-xano-item] input[wf-xano-field="title"]')
+  titleInput.value = 'My Draft'
+  titleInput.dispatchEvent(new w.Event('input', { bubbles: true }))
+  assert.deepEqual(inst.getState().form['row:9'].dirty, { title: true })
+  title = 'Server Wins'
+  await inst.refresh()
+  assert.equal(root.querySelector('[wf-xano-item] input[wf-xano-field="title"]').value, 'My Draft', 'in-flight edit survives refresh')
+  assert.deepEqual(inst.getState().form['row:9'].dirty, { title: true }, 'preserved edit stays dirty after resync')
+  console.log('PASS 87: keyed refresh rebases untouched fields and preserves in-flight edits')
+}
+
+// ---------- Test 88: cancelling a mid-submit form re-enables its submit control ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-auth="none">
+    <form wf-xano-form="edit" wf-xano-form-source="api:save" wf-xano-form-auth="none"><input wf-xano-field="title" value="Draft"><button type="submit">Save</button></form>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.edit))
+  const inst = root.__wfXano
+  const form = root.querySelector('form')
+  const button = form.querySelector('button')
+  const submit = inst.submitForm(form)
+  assert.ok(await waitFor(() => inst.getState().form.edit.status === 'submitting'))
+  assert.ok(await waitFor(() => button.disabled))
+  assert.equal(form.classList.contains('is-wf-xano-form-submitting'), true)
+  assert.equal(form.getAttribute('aria-busy'), 'true')
+  // Simulate the account-switch reset path (clearAuthenticatedStoreSnapshots).
+  inst._cancelForms('form:auth-change')
+  inst._clearFormSnapshots('form:auth-change')
+  assert.equal(await submit, false)
+  assert.equal(inst.getState().form.edit.status, 'idle')
+  assert.equal(button.disabled, false, 'submit re-enabled after cancel reprojects form DOM')
+  assert.equal(button.hasAttribute('data-wf-xano-form-disabled'), false)
+  assert.equal(form.classList.contains('is-wf-xano-form-submitting'), false)
+  assert.equal(form.getAttribute('aria-busy'), 'false')
+  console.log('PASS 88: mid-submit form cancel re-enables submit control and clears submitting DOM')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

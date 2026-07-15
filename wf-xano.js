@@ -1869,7 +1869,32 @@
     var forms = []
     if (scope && scope.matches && scope.matches('form[wf-xano-form]')) forms.push(scope)
     forms = forms.concat(qa(scope || this.root, 'form[wf-xano-form]'))
-    forms.forEach(function (form) { self._registerForm(form) })
+    forms.forEach(function (form) {
+      if (form.__wfXanoFormKey) self._resyncForm(form)
+      else self._registerForm(form)
+    })
+  }
+
+  /** After a keyed reconcile re-binds a reused card's fields to fresh
+   *  authoritative values, adopt them as the new snapshot baseline for
+   *  fields the user has not edited so the store, dirty detection, and
+   *  form DOM stay in sync. Untouched dirty fields keep their prior
+   *  baseline; an in-flight submit is left untouched. */
+  Instance.prototype._resyncForm = function (form) {
+    if (!this._ownsForm(form)) return
+    var key = form.__wfXanoFormKey
+    var prior = key && this._state.form[key]
+    if (!prior || prior.status === 'submitting') return
+    var current
+    try { current = this._readFormValues(form) } catch (err) { return }
+    var initial = {}
+    var dirty = {}
+    Object.keys(current).forEach(function (field) {
+      initial[field] = prior.dirty[field] && field in prior.initial ? prior.initial[field] : current[field]
+      if (JSON.stringify(current[field]) !== JSON.stringify(initial[field])) dirty[field] = true
+    })
+    if (JSON.stringify(current) === JSON.stringify(prior.current) && JSON.stringify(initial) === JSON.stringify(prior.initial) && JSON.stringify(dirty) === JSON.stringify(prior.dirty)) return
+    this._setFormState(key, Object.assign({}, prior, { initial: initial, current: current, dirty: dirty }), 'form:resync')
   }
 
   Instance.prototype._updateForm = function (form, touchedField) {
@@ -2090,6 +2115,7 @@
         forms[key] = state.status === 'submitting' ? Object.assign({}, state, { status: 'idle', errors: {}, error: null }) : state
       })
       this._transition({ form: forms }, reason || 'form:cancel', { form: true })
+      Object.keys(forms).forEach(function (key) { self._projectFormKey(key) })
     }
   }
 
@@ -2106,6 +2132,7 @@
       qa(self.root, 'form[wf-xano-form]').filter(function (form) { return self._formKey(form) === key }).forEach(function (form) { self._writeFormValues(form, blank) })
     })
     this._transition({ form: forms }, reason || 'form:clear', { form: true })
+    Object.keys(forms).forEach(function (key) { self._projectFormKey(key) })
   }
 
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
