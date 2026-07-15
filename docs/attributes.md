@@ -70,6 +70,45 @@ matching `wf-xano-instance` key.
 Projection updates are batched into one microtask pass per synchronous transition group. Existing
 `total`, `loader`, `empty`, `error`, and item `wf-xano-if` roles remain supported unchanged.
 
+### Pessimistic actions
+
+These v0.21 attributes opt a control into one Xano-authoritative mutation. The runtime disables the
+control, sends exactly one request per active action/item key, records safe lifecycle state, then
+refreshes the declared list instances. It never constructs an endpoint from record data.
+
+```html
+<button
+  wf-xano-action="archive"
+  wf-xano-action-source="opp30:opportunities/archive"
+  wf-xano-action-method="PATCH"
+  wf-xano-action-param-record_id="item:id"
+  wf-xano-action-param-status="literal:Archived"
+  wf-xano-action-idempotency="item:id"
+  wf-xano-action-invalidate="self,counts">
+  Archive
+</button>
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `wf-xano-action` | ✅ | Stable authored action name (`archive`, `approve`, etc.). The active key is action + current item ID when the control is inside a rendered card. |
+| `wf-xano-action-source` | ✅ | Literal Xano source in the same grammar as `wf-xano-source`. Record/form values cannot alter it. |
+| `wf-xano-action-method` | — | `POST` (default), `PATCH`, `PUT`, or `DELETE`. `GET` is rejected for actions. |
+| `wf-xano-action-param-<field>` | — | One allowlisted JSON payload field. Its value must be `item:<path>`, `form:<field>`, or `literal:<text>`. Item values must be scalar. |
+| `wf-xano-action-field` | for `form:` | Explicitly marks the input/select/textarea that may supply a named `form:` binding. Only controls in the action's closest form are considered. |
+| `wf-xano-action-idempotency` | — | Optional binding in the same grammar; sent as `Idempotency-Key` only when the Xano endpoint supports that key's semantics. |
+| `wf-xano-action-invalidate` | — | Comma-separated instance keys to refresh after success. `self` means the owning instance and is the default. Repeated targets are deduplicated. |
+| `wf-xano-action-auth="none"` | — | Disables inherited Memberstack/Xano authentication for an explicitly public test endpoint. Actions otherwise inherit their list's auth mode. |
+
+Pending controls receive `disabled` when supported, `aria-busy="true"`, `aria-disabled="true"`, and
+`is-wf-xano-mutating`; the wrapper also receives `is-wf-xano-mutating`. Terminal controls receive
+`is-wf-xano-action-success` or `is-wf-xano-action-error`. Mutation state is available under
+`mutation["<action>:<item-id>"]` through `getState()`/`subscribe()`. Account changes and `destroy()`
+abort active actions and clear their state. Xano must always resolve member identity, permission,
+record validity, and idempotency server-side; a DOM item ID is never authorization evidence.
+Authenticated actions are restricted to the configured `xanoBase` origin. Public actions may opt
+out with action auth `none`.
+
 ### Favorites
 
 Favorites are authenticated, member-scoped controls that work inside cards rendered by either

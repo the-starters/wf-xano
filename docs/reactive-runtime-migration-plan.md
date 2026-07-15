@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 Owner: The Starters Platform / wf-xano maintainers
-Status: Phase 0–1 implemented locally; validation in progress
+Status: Phase 0–2 merged; Phase 3 implementation in validation
 
 ## 📌 TL;DR
 
@@ -25,11 +25,11 @@ Status: Phase 0–1 implemented locally; validation in progress
 | --- | --- | --- | --- | --- |
 | Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.18.3 baseline: 54 runtime tests + prompt tests |
 | Migration/drift contract defined | ✅ Complete | Codex | This document | Xano authority and projections documented |
-| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–2 implementation authorized |
+| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–3 implementation authorized |
 | Phase 0 compatibility harness | ✅ Complete | wf-xano maintainer | `test/reactive-runtime-parity.test.mjs`, `audit()` | Source/minified parity + local harness established |
 | Phase 1 reactive store foundation | ✅ Complete | wf-xano maintainer | v0.19.0 merged in PR #33 | Store/API landed; no production release yet |
-| Phase 2 reactive DOM projections | 🟡 In progress | wf-xano maintainer | v0.20.0 branch; tests 62–65 | Read-only attributes implemented; gate/browser checks remain |
-| Phase 3 generic actions | ⬜ Not started | wf-xano + Xano owner |  | Pessimistic mutations first |
+| Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Read-only attributes landed; no production release yet |
+| Phase 3 generic actions | 🟡 In progress | wf-xano + Xano owner | v0.21.0 branch; tests 66–71 | Pessimistic mocked/test-mode contract only |
 | Phase 4 optimistic mutations/reconciliation | ⬜ Not started | wf-xano + Xano owner |  | Test-mode canary required |
 | Phase 5 forms | ⬜ Not started | wf-xano + Product |  | Create/edit flows migrate last |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
@@ -183,9 +183,15 @@ Current development measurements (2026-07-15):
 - v0.19.0 development minified build: 40,437 bytes (+3,883 bytes / 10.6%);
 - provisional v0.19 budget: no more than 42,000 minified bytes before release;
 - v0.20.0 development minified build: 42,293 bytes; provisional v0.20 budget: 44,000 bytes;
+- v0.21.0 development minified build: 49,478 bytes; provisional v0.21 budget: 50,000 bytes;
 - cold list load: one list request, unchanged; store transitions add no request or render;
 - local harness browser canary passed: legacy/reactive totals both rendered `23`, reactive status
   reached `success`, and loading visibility/class state cleared after the response.
+- v0.21 mocked mutation coverage passes duplicate-write, HTTP 400/401/403/404/409/422/500,
+  timeout/retry, account-switch, destroy, form-binding, and named-invalidation cases; a real Xano
+  mutation remains intentionally blocked until an exact test endpoint/record is approved.
+- v0.21 local Chrome canary passed against the mocked harness: one action click reached pending then
+  success, refreshed the list once, and rendered record `100` with authoritative `Closed` state.
 
 ### Phase 1 — Invisible reactive store foundation
 

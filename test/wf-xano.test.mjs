@@ -2209,4 +2209,280 @@ const FULL_PAGE1 = {
   console.log('PASS 65: destroy cancels queued projections')
 }
 
+// ---------- Test 66: pessimistic action payload, dedupe, lifecycle, and self invalidation ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template>
+        <span wf-xano-bind="title"></span>
+        <button wf-xano-action="archive" wf-xano-action-source="api:archive"
+          wf-xano-action-method="PATCH" wf-xano-action-param-record_id="item:id"
+          wf-xano-action-param-mode="literal:archived" wf-xano-action-idempotency="item:id"
+          aria-disabled="false">Archive</button>
+      </div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let releaseAction
+  let listCalls = 0
+  let actionCalls = 0
+  let actionRequest
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/list')) {
+      listCalls += 1
+      return makeRes(PAGE([{ id: 7, title: listCalls === 1 ? 'Open' : 'Archived' }], 1))
+    }
+    actionCalls += 1
+    actionRequest = opts
+    return new Promise((resolve) => {
+      releaseAction = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 7, secret: 'not-public' }) })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const events = []
+  inst.on('actionStart', (event) => events.push(event))
+  inst.on('actionSuccess', (event) => events.push(event))
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  const first = inst.runAction(button)
+  const duplicate = inst.runAction(button)
+  assert.equal(first, duplicate, 'same action/item returns the one active mutation promise')
+  assert.ok(await waitFor(() => inst.getState().mutation['archive:7']?.status === 'pending'))
+  assert.equal(button.disabled, true)
+  assert.equal(button.getAttribute('aria-busy'), 'true')
+  assert.equal(button.classList.contains('is-wf-xano-mutating'), true)
+  assert.equal(root.classList.contains('is-wf-xano-mutating'), true)
+  assert.equal(actionCalls, 1, 'duplicate action sends one mutation')
+  assert.equal(actionRequest.method, 'PATCH')
+  assert.deepEqual(JSON.parse(actionRequest.body), { record_id: 7, mode: 'archived' })
+  assert.equal(actionRequest.headers['Idempotency-Key'], '7')
+  releaseAction()
+  assert.equal(await first, true)
+  assert.ok(await waitFor(() => listCalls === 2 && inst.getState().mutation['archive:7']?.status === 'success'))
+  const refreshed = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  assert.equal(refreshed.disabled, false)
+  assert.equal(refreshed.getAttribute('aria-disabled'), 'false', 'authored ARIA state is restored')
+  assert.equal(refreshed.classList.contains('is-wf-xano-action-success'), true)
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind="title"]').textContent, 'Archived')
+  assert.equal(JSON.stringify(inst.getState()).includes('not-public'), false, 'response body is absent from state')
+  assert.equal(JSON.stringify(events).includes('not-public'), false, 'response body is absent from events')
+  console.log('PASS 66: pessimistic action lifecycle, dedupe, allowlisted payload, and refresh')
+}
+
+// ---------- Test 67: action HTTP failures, timeout, and retry stay safe ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  const failures = [400, 401, 403, 404, 409, 422, 500]
+  let actionAttempt = 0
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => {
+    if (url.endsWith('/list')) {
+      listCalls += 1
+      return makeRes(PAGE([{ id: 8 }], 1))
+    }
+    const attempt = actionAttempt++
+    if (attempt < failures.length) return makeRes({ message: 'private failure body' }, false, failures[attempt])
+    if (attempt === failures.length) return Promise.reject(Object.assign(new Error('private timeout detail'), { name: 'TimeoutError' }))
+    return makeRes({ id: 8, private: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const errors = []
+  inst.on('actionError', (event) => errors.push(event))
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  for (const status of failures) {
+    assert.equal(await inst.runAction(button), false)
+    assert.equal(inst.getState().mutation['archive:8'].status, 'error')
+    assert.equal(inst.getState().mutation['archive:8'].error.status, status)
+  }
+  assert.equal(await inst.runAction(button), false, 'timeout remains retryable')
+  assert.equal(inst.getState().mutation['archive:8'].error.name, 'TimeoutError')
+  assert.equal(JSON.stringify(errors).includes('private'), false, 'safe errors omit response bodies/messages')
+  assert.equal(await inst.runAction(button), true, 'retry succeeds')
+  assert.ok(await waitFor(() => listCalls === 2))
+  assert.equal(inst.getState().mutation['archive:8'].status, 'success')
+  const refreshed = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  refreshed.setAttribute('wf-xano-action-param-record_id', 'item:missing')
+  assert.equal(await inst.runAction(refreshed), false, 'invalid binding fails before fetch')
+  assert.deepEqual(inst._activeMutations, {}, 'synchronous validation failure releases the action key')
+  refreshed.setAttribute('wf-xano-action-param-record_id', 'item:id')
+  assert.equal(await inst.runAction(refreshed), true, 'binding can be corrected and retried')
+  console.log('PASS 67: action HTTP failures, timeout, safe errors, and retry')
+}
+
+// ---------- Test 68: external action form bindings and named invalidation are scoped/deduped ----------
+{
+  const markup = `<!doctype html><html><body>
+    <form>
+      <input wf-xano-action-field="reason" value="cleanup">
+      <button id="external-action" wf-xano-instance="a" wf-xano-action="archive"
+        wf-xano-action-source="api:archive" wf-xano-action-auth="none"
+        wf-xano-action-param-reason="form:reason" wf-xano-action-param-mode="literal:archive"
+        wf-xano-action-idempotency="literal:operation-1" wf-xano-action-invalidate="a,b,a">Archive</button>
+    </form>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="api:a" wf-xano-auth="none">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="api:b" wf-xano-auth="none">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push({ url, opts })
+    if (url.endsWith('/archive')) return makeRes({ ok: true })
+    return makeRes(PAGE([{ id: url.endsWith('/a') ? 'a1' : 'b1', title: 'Row' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => calls.filter((call) => !call.url.endsWith('/archive')).length === 2))
+  const inst = w.WfXano.get('a')
+  const button = w.document.querySelector('#external-action')
+  await assert.rejects(w.WfXano.get('b').runAction(button), /does not belong to instance/)
+  button.click()
+  assert.ok(await waitFor(() => inst.getState().mutation.archive?.status === 'success'))
+  const mutation = calls.filter((call) => call.url.endsWith('/archive'))[0]
+  assert.deepEqual(JSON.parse(mutation.opts.body), { reason: 'cleanup', mode: 'archive' })
+  assert.equal(mutation.opts.headers['Idempotency-Key'], 'operation-1')
+  assert.equal(calls.filter((call) => call.url.endsWith('/a')).length, 2, 'A invalidated once')
+  assert.equal(calls.filter((call) => call.url.endsWith('/b')).length, 2, 'B invalidated once')
+  assert.equal(button.classList.contains('is-wf-xano-action-success'), true)
+  console.log('PASS 68: external form action and named invalidation scoping')
+}
+
+// ---------- Test 69: account switch aborts pending authenticated mutations ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a'
+  let actionAborted = false
+  let actionCalls = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = (url, opts) => {
+    if (url.includes('/auth/trade-token')) {
+      const member = JSON.parse(opts.body).token
+      return makeRes({ authToken: `xano-${member}` })
+    }
+    if (url.endsWith('/list')) {
+      const member = opts.headers.Authorization.endsWith('member-a') ? 'a' : 'b'
+      return makeRes(PAGE([{ id: member, title: member }], 1))
+    }
+    actionCalls += 1
+    return new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        actionAborted = true
+        reject(new w.DOMException('Aborted', 'AbortError'))
+      })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[data-wf-xano-id="a"] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const pending = inst.runAction(root.querySelector('[wf-xano-item] [wf-xano-action]'))
+  assert.ok(await waitFor(() => actionCalls === 1 && inst.getState().mutation['archive:a']?.status === 'pending'))
+  session = 'member-b'
+  await inst.load()
+  assert.equal(await pending, false)
+  assert.equal(actionAborted, true)
+  assert.deepEqual(inst.getState().mutation, {}, 'previous-account mutation state is cleared')
+  assert.ok(root.querySelector('[data-wf-xano-id="b"]'))
+  console.log('PASS 69: account switch aborts and clears pending authenticated actions')
+}
+
+// ---------- Test 70: destroy aborts a pending action without terminal events ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let aborted = false
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 9 }], 1))
+    return new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        aborted = true
+        reject(new w.DOMException('Aborted', 'AbortError'))
+      })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const terminal = []
+  inst.on('actionSuccess', (event) => terminal.push(event))
+  inst.on('actionError', (event) => terminal.push(event))
+  const pending = inst.runAction(root.querySelector('[wf-xano-item] [wf-xano-action]'))
+  assert.ok(await waitFor(() => inst.getState().mutation['archive:9']?.status === 'pending'))
+  inst.destroy()
+  assert.equal(await pending, false)
+  assert.equal(aborted, true)
+  assert.equal(inst.getState().status, 'destroyed')
+  assert.deepEqual(inst.getState().mutation, {})
+  assert.deepEqual(terminal, [])
+  console.log('PASS 70: destroy aborts pending actions without stale terminal events')
+}
+
+// ---------- Test 71: action method and authenticated-origin guards block writes ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-method="GET" wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let mutationCalls = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('member-a') }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = (url) => {
+    if (url.includes('/auth/trade-token')) return makeRes({ authToken: 'xano-a' })
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 10 }], 1))
+    mutationCalls += 1
+    return makeRes({ ok: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  await assert.rejects(inst.runAction(button), /Invalid wf-xano action configuration/)
+  button.setAttribute('wf-xano-action-method', 'POST')
+  button.setAttribute('wf-xano-action-source', 'https://outside.example/mutate')
+  await assert.rejects(inst.runAction(button), /outside xanoBase origin/)
+  assert.equal(mutationCalls, 0)
+  assert.deepEqual(inst.getState().mutation, {})
+  console.log('PASS 71: action method and authenticated-origin guards')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

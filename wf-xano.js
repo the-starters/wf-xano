@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.20.0'
+  var VERSION = '0.21.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -218,6 +218,15 @@
     if (Object.prototype.hasOwnProperty.call(obj, path)) return obj[path]
     return path.split('.').reduce(function (o, k) {
       return o == null ? undefined : o[k]
+    }, obj)
+  }
+
+  /** Own-property-only lookup for values that can enter mutation payloads. */
+  function getOwn(obj, path) {
+    if (obj == null || !/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(path || '')) return undefined
+    return path.split('.').reduce(function (value, key) {
+      if (value == null || !Object.prototype.hasOwnProperty.call(value, key)) return undefined
+      return value[key]
     }, obj)
   }
 
@@ -1149,6 +1158,7 @@
     var reload = []
     ;(instances || []).forEach(function (instance) {
       if (!instance.auth || !instance._state) return
+      instance._cancelMutations('action:auth-change')
       // The instance that discovered the change is already in load(). Every
       // other member-scoped list must invalidate an old in-flight response
       // and reload from the newly traded account rather than retaining old
@@ -1243,6 +1253,7 @@
     this._subscribers = []
     this._projectionScheduled = false
     this._destroyed = false
+    this._activeMutations = {}
     this._state = {
       status: 'idle',
       data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
@@ -1321,11 +1332,13 @@
   /** One transition path owns the immutable runtime store. Legacy instance
    *  fields remain the request/render authority during the compatibility
    *  phase; this store is their observable shadow projection. */
-  Instance.prototype._transition = function (patch, reason) {
+  Instance.prototype._transition = function (patch, reason, replaceSlices) {
     var previous = this._state
     var next = Object.assign({}, previous, patch || {})
     ;['data', 'query', 'local', 'mutation'].forEach(function (key) {
-      if (patch && patch[key]) next[key] = Object.assign({}, previous[key], patch[key])
+      if (patch && patch[key]) {
+        next[key] = replaceSlices && replaceSlices[key] ? patch[key] : Object.assign({}, previous[key], patch[key])
+      }
     })
     next.revision = previous.revision + 1
     this._state = freezeStateValue(next)
@@ -1438,6 +1451,231 @@
           el.classList.toggle(className, evalIf(expression, state))
         })
     })
+    this._projectActionControls()
+  }
+
+  /** Return the current item represented by an action control. Only the
+   *  stable DOM ID crosses the DOM/store boundary; raw records are never
+   *  attached to rendered elements. */
+  Instance.prototype._actionItem = function (control) {
+    var card = control.closest ? control.closest('[wf-xano-item]') : null
+    if (!card || ownerRoot(card) !== this.root) return { id: null, item: null }
+    var id = card.getAttribute('data-wf-xano-id')
+    if (id == null) return { id: null, item: null }
+    var item = this._state.data.items.filter(function (candidate) {
+      return candidate && candidate.id != null && String(candidate.id) === String(id)
+    })[0]
+    return { id: String(id), item: item || null }
+  }
+
+  function actionName(control) {
+    var name = String(control.getAttribute('wf-xano-action') || '').trim()
+    return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(name) ? name : null
+  }
+
+  Instance.prototype._ownsActionControl = function (control) {
+    if (!control) return false
+    if (this.root.contains(control)) return ownerRoot(control) === this.root
+    return !!(this.key && control.getAttribute('wf-xano-instance') === this.key)
+  }
+
+  /** Read one explicitly declared action value. The grammar is deliberately
+   *  narrow: item fields, marked form controls, or authored literals only. */
+  Instance.prototype._actionValue = function (control, item, spec) {
+    var raw = String(spec || '')
+    var separator = raw.indexOf(':')
+    if (separator < 1) throw new Error('Invalid action binding')
+    var kind = raw.slice(0, separator).trim()
+    var value = raw.slice(separator + 1)
+    if (kind === 'literal') return value
+    if (kind === 'item') {
+      var itemValue = getOwn(item, value.trim())
+      if (itemValue == null || typeof itemValue === 'object') throw new Error('Missing scalar action item value')
+      return itemValue
+    }
+    if (kind === 'form') {
+      var field = value.trim()
+      if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(field)) throw new Error('Invalid action form field')
+      var form = control.closest ? control.closest('form') : null
+      if (!form) throw new Error('Action form not found')
+      var controls = qa(form, '[wf-xano-action-field="' + cssAttr(field) + '"]')
+      if (!controls.length) throw new Error('Action form field not found')
+      var checkable = controls.filter(function (el) {
+        return el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)
+      })
+      if (checkable.length) {
+        return checkable
+          .filter(function (el) { return el.checked })
+          .map(function (el) { return el.value })
+          .join(',')
+      }
+      return controls[0].value
+    }
+    throw new Error('Unsupported action binding')
+  }
+
+  Instance.prototype._actionPayload = function (control, item) {
+    var self = this
+    var payload = {}
+    Array.prototype.forEach.call(control.attributes, function (attr) {
+      var match = /^wf-xano-action-param-(.+)$/.exec(attr.name)
+      if (!match) return
+      var field = match[1]
+      if (!/^[a-z_][a-z0-9_]*$/.test(field)) throw new Error('Invalid action payload field')
+      payload[field] = self._actionValue(control, item, attr.value)
+    })
+    return payload
+  }
+
+  Instance.prototype._mutationKey = function (control) {
+    var name = actionName(control)
+    if (!name) return null
+    var item = this._actionItem(control)
+    return name + (item.id != null ? ':' + item.id : '')
+  }
+
+  Instance.prototype._setMutation = function (key, value, reason) {
+    var mutation = Object.assign({}, this._state.mutation)
+    if (value == null) delete mutation[key]
+    else mutation[key] = value
+    this._transition({ mutation: mutation }, reason, { mutation: true })
+  }
+
+  Instance.prototype._setActionControlState = function (control, state) {
+    var pending = state && state.status === 'pending'
+    control.classList.toggle('is-wf-xano-mutating', !!pending)
+    control.classList.toggle('is-wf-xano-action-error', !!(state && state.status === 'error'))
+    control.classList.toggle('is-wf-xano-action-success', !!(state && state.status === 'success'))
+    control.setAttribute('aria-busy', pending ? 'true' : 'false')
+    if (pending) {
+      if ('disabled' in control && !control.disabled) {
+        control.disabled = true
+        control.setAttribute('data-wf-xano-action-disabled', '')
+      }
+      if (!control.hasAttribute('data-wf-xano-action-aria-disabled')) {
+        var previousAria = control.getAttribute('aria-disabled')
+        control.setAttribute('data-wf-xano-action-aria-disabled', previousAria == null ? '__missing__' : previousAria)
+      }
+      control.setAttribute('aria-disabled', 'true')
+    } else {
+      if (control.hasAttribute('data-wf-xano-action-disabled')) {
+        control.disabled = false
+        control.removeAttribute('data-wf-xano-action-disabled')
+      }
+      if (control.hasAttribute('data-wf-xano-action-aria-disabled')) {
+        var priorAria = control.getAttribute('data-wf-xano-action-aria-disabled')
+        if (priorAria === '__missing__') control.removeAttribute('aria-disabled')
+        else control.setAttribute('aria-disabled', priorAria)
+        control.removeAttribute('data-wf-xano-action-aria-disabled')
+      }
+    }
+  }
+
+  Instance.prototype._projectActionControls = function () {
+    var self = this
+    var pending = false
+    this.qa('[wf-xano-action]').forEach(function (control) {
+      var key = self._mutationKey(control)
+      var state = key ? self._state.mutation[key] : null
+      if (state && state.status === 'pending') pending = true
+      self._setActionControlState(control, state)
+    })
+    this.root.classList.toggle('is-wf-xano-mutating', pending)
+  }
+
+  Instance.prototype._invalidateActions = function (control) {
+    var self = this
+    var spec = String(control.getAttribute('wf-xano-action-invalidate') || 'self')
+    var targets = []
+    spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
+      instances.forEach(function (instance) {
+        if ((key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
+          if (targets.indexOf(instance) === -1) targets.push(instance)
+        }
+      })
+    })
+    return Promise.all(targets.map(function (instance) {
+      return instance.ok && !instance._destroyed ? instance.refresh() : undefined
+    }))
+  }
+
+  /** Execute one pessimistic action. Endpoint and method are authored
+   *  literals; payload fields are allowlisted by action-param attributes.
+   *  The mutation response body is never exposed to state or events. */
+  Instance.prototype.runAction = function (control) {
+    if (!this.ok || this._destroyed || !control) return Promise.resolve(false)
+    if (!this._ownsActionControl(control)) return Promise.reject(new Error('Action control does not belong to instance'))
+    var name = actionName(control)
+    var source = control.getAttribute('wf-xano-action-source')
+    var url = resolveUrl(source)
+    var method = String(control.getAttribute('wf-xano-action-method') || 'POST').toUpperCase()
+    var item = this._actionItem(control)
+    var key = name && (name + (item.id != null ? ':' + item.id : ''))
+    if (!name || !url || ['POST', 'PATCH', 'PUT', 'DELETE'].indexOf(method) === -1 || !key) {
+      return Promise.reject(new Error('Invalid wf-xano action configuration'))
+    }
+    var actionAuth = control.getAttribute('wf-xano-action-auth') !== 'none' && this.auth
+    if (actionAuth && /^http:\/\//i.test(url) && CFG.allowInsecureAuth !== true) {
+      return Promise.reject(new Error('Refusing authenticated action over insecure HTTP'))
+    }
+    if (actionAuth) {
+      try {
+        if (new URL(url, window.location.href).origin !== new URL(XANO_HOST, window.location.href).origin) {
+          return Promise.reject(new Error('Refusing authenticated action outside xanoBase origin'))
+        }
+      } catch (e) {
+        return Promise.reject(new Error('Invalid authenticated action URL'))
+      }
+    }
+    if (this._activeMutations[key]) return this._activeMutations[key].promise
+    var self = this
+    var controller = typeof AbortController === 'function' ? new AbortController() : null
+    var entry = { controller: controller, promise: null }
+    var promise = Promise.resolve().then(async function () {
+      try {
+        var payload = self._actionPayload(control, item.item)
+        self._setMutation(key, { status: 'pending', action: name, itemId: item.id, error: null }, 'action:start')
+        self.emit('actionStart', { action: name, key: key, itemId: item.id })
+        var headers = { 'Content-Type': 'application/json' }
+        if (actionAuth) headers.Authorization = 'Bearer ' + (await xanoToken(self))
+        if (controller && controller.signal.aborted) return false
+        var idempotency = control.getAttribute('wf-xano-action-idempotency')
+        if (idempotency) {
+          var idempotencyValue = self._actionValue(control, item.item, idempotency)
+          if (idempotencyValue !== '') headers['Idempotency-Key'] = String(idempotencyValue)
+        }
+        var request = { method: method, headers: headers, body: JSON.stringify(payload), cache: 'no-store' }
+        if (controller) request.signal = controller.signal
+        var res = await fetch(url, request)
+        if (controller && controller.signal.aborted) return false
+        if (!res.ok) throw Object.assign(new Error('wf-xano action ' + res.status), { status: res.status })
+        self._setMutation(key, { status: 'success', action: name, itemId: item.id, error: null }, 'action:success')
+        self.emit('actionSuccess', { action: name, key: key, itemId: item.id, status: res.status })
+        await self._invalidateActions(control)
+        return true
+      } catch (err) {
+        if ((controller && controller.signal.aborted) || self._destroyed) return false
+        self._setMutation(key, { status: 'error', action: name, itemId: item.id, error: publicError(err) }, 'action:error')
+        self.emit('actionError', { action: name, key: key, itemId: item.id, error: publicError(err) })
+        return false
+      } finally {
+        if (self._activeMutations[key] === entry) delete self._activeMutations[key]
+      }
+    })
+    entry.promise = promise
+    this._activeMutations[key] = entry
+    return promise
+  }
+
+  Instance.prototype._cancelMutations = function (reason) {
+    var self = this
+    Object.keys(this._activeMutations).forEach(function (key) {
+      var entry = self._activeMutations[key]
+      if (entry.controller) entry.controller.abort()
+    })
+    this._activeMutations = {}
+    if (!this._destroyed) this._transition({ mutation: {} }, reason || 'action:cancel', { mutation: true })
+    this._projectActionControls()
   }
 
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
@@ -1554,6 +1792,24 @@
   Instance.prototype.bindControls = function () {
     var self = this
     var signal = this._ac ? { signal: this._ac.signal } : false
+
+    // Actions inside rendered cards use root delegation so future clones are
+    // covered. Static controls outside the wrapper bind through instance keys.
+    var handleAction = function (e) {
+      var control = e.target && e.target.closest ? e.target.closest('[wf-xano-action]') : null
+      if (!control) return
+      if (!self._ownsActionControl(control)) return
+      e.preventDefault()
+      self.runAction(control).catch(function () {
+        /* invalid configuration is reflected by the returned promise */
+      })
+    }
+    this.root.addEventListener('click', handleAction, signal)
+    this.qa('[wf-xano-action]').filter(function (el) {
+      return !self.root.contains(el)
+    }).forEach(function (el) {
+      el.addEventListener('click', handleAction, signal)
+    })
 
     // Filters: [wf-xano-filter="field"] — re-fetch on change. Checkbox groups
     // for the same field combine into a comma-separated param.
@@ -2166,6 +2422,7 @@
 
   /** Tear down: abort listeners, drop rendered items, unregister. */
   Instance.prototype.destroy = function () {
+    this._cancelMutations('action:destroy')
     this._destroyed = true
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()
