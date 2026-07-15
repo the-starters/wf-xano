@@ -2661,4 +2661,106 @@ const FULL_PAGE1 = {
   console.log('PASS 76: focused non-text control survives keyed optimistic reconciliation')
 }
 
+// ---------- Test 77: keyed refresh failure preserves existing cards and store ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let fail = false
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => fail
+    ? Promise.reject(new w.Error('network down'))
+    : makeRes(PAGE([{ uuid: 'a', title: 'Alpha' }, { uuid: 'b', title: 'Beta' }], 2))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 2))
+  const cardA = root.querySelector('[data-wf-xano-id="a"]')
+  fail = true
+  await root.__wfXano.refresh()
+  assert.equal(root.__wfXano.getState().status, 'error', 'transient refresh failure surfaces error state')
+  assert.equal(root.querySelectorAll('[wf-xano-item]').length, 2, 'keyed cards survive a transient refresh failure')
+  assert.equal(root.querySelector('[data-wf-xano-id="a"]'), cardA, 'existing keyed node is not recreated')
+  assert.deepEqual(root.__wfXano.getState().data.items.map((i) => i.uuid), ['a', 'b'], 'authoritative store is preserved on refresh error')
+  console.log('PASS 77: keyed refresh failure preserves existing cards and authoritative store')
+}
+
+// ---------- Test 78: keyed reconcile leaves already-ordered cards in place ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let rows = [
+    { uuid: 'a', title: 'Alpha' },
+    { uuid: 'b', title: 'Beta' },
+    { uuid: 'c', title: 'Gamma' },
+  ]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(rows, rows.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 3))
+  const cards = ['a', 'b', 'c'].map((id) => root.querySelector('[data-wf-xano-id="' + id + '"]'))
+  // Instrument insertBefore to catch needless reparenting of unchanged cards.
+  const list = cards[0].parentNode
+  let moves = 0
+  const nativeInsert = list.insertBefore.bind(list)
+  list.insertBefore = (node, ref) => { moves += 1; return nativeInsert(node, ref) }
+  rows = [
+    { uuid: 'a', title: 'Alpha revised' },
+    { uuid: 'b', title: 'Beta revised' },
+    { uuid: 'c', title: 'Gamma revised' },
+  ]
+  await root.__wfXano.refresh()
+  assert.equal(moves, 0, 'unchanged order does not reparent any card')
+  assert.deepEqual([...root.querySelectorAll('[wf-xano-item]')].map((c) => c.getAttribute('data-wf-xano-id')), ['a', 'b', 'c'])
+  assert.equal(root.querySelector('[data-wf-xano-id="a"] [wf-xano-bind]').textContent, 'Alpha revised', 'cards still rebind in place')
+  // A reorder moves only what must move, and the same nodes are reused.
+  rows = [
+    { uuid: 'c', title: 'Gamma' },
+    { uuid: 'a', title: 'Alpha' },
+    { uuid: 'b', title: 'Beta' },
+  ]
+  await root.__wfXano.refresh()
+  assert.equal(root.querySelector('[data-wf-xano-id="c"]'), cards[2], 'reused node identity survives reorder')
+  assert.deepEqual([...root.querySelectorAll('[wf-xano-item]')].map((c) => c.getAttribute('data-wf-xano-id')), ['c', 'a', 'b'])
+  console.log('PASS 78: keyed reconcile leaves already-ordered cards untouched')
+}
+
+// ---------- Test 79: optimistic partial refresh converges self even when invalidate omits self ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-param-record_id="item:id"
+        wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+        wf-xano-action-optimistic-value="literal:Closed" wf-xano-action-optimistic-rollback="item:status"
+        wf-xano-action-invalidate="ghost">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 1, status: ++listCalls === 1 ? 'Live' : 'Closed' }], 1))
+    : makeRes({ ok: true })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  assert.equal(await root.__wfXano.runAction(card.querySelector('button')), true)
+  assert.equal(listCalls, 2, 'partial response refreshes the owning instance even when invalidate omits self')
+  assert.equal(root.querySelector('[wf-xano-item]'), card, 'authoritative refresh keeps the stable node')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 79: optimistic partial refresh converges self even when invalidate omits self')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

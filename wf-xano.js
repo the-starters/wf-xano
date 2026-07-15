@@ -1648,10 +1648,13 @@
     this.root.classList.toggle('is-wf-xano-mutating', pending)
   }
 
-  Instance.prototype._invalidateActions = function (control, skipSelf) {
+  Instance.prototype._invalidateActions = function (control, skipSelf, forceSelf) {
     var self = this
     var spec = String(control.getAttribute('wf-xano-action-invalidate') || 'self')
     var targets = []
+    // Optimistic partial responses must always converge against Xano, so the
+    // owning instance refreshes once even if the invalidate list omits 'self'.
+    if (forceSelf && !skipSelf) targets.push(self)
     spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
       instances.forEach(function (instance) {
         if ((!skipSelf && key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
@@ -1727,7 +1730,7 @@
         }
         self._setMutation(key, { status: 'success', action: name, itemId: item.id, error: null }, 'action:success')
         self.emit('actionSuccess', { action: name, key: key, itemId: item.id, status: res.status })
-        await self._invalidateActions(control, reconciled)
+        await self._invalidateActions(control, reconciled, !!optimistic && !reconciled)
         self._pruneMutation(key)
         return true
       } catch (err) {
@@ -2300,13 +2303,13 @@
       if (append) {
         // Keep already-rendered pages and make the failed page retryable.
         this.page = previousPage != null ? previousPage : Math.max(1, this.page - 1)
-      } else if (!err.keyed) {
+      } else if (!err.keyed && !this.keyed) {
         this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
       }
       this._transition(
         {
           status: 'error',
-          data: append || err.keyed ? this._state.data : { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+          data: append || err.keyed || this.keyed ? this._state.data : { items: [], total: 0, page: 1, pages: 1, hasMore: false },
           query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
           error: publicError(err),
         },
@@ -2405,6 +2408,7 @@
       else card.remove()
     })
     var appended = []
+    var ordered = []
     items.forEach(function (item) {
       var rawId = item && get(item, self.keyField)
       var id = String(rawId)
@@ -2422,9 +2426,16 @@
         wireShowMore(card)
         appended.push(card)
       }
-      if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) list.insertBefore(card, self._infiniteSentinel)
-      else list.appendChild(card)
+      ordered.push(card)
     })
+    // Place cards in item order, but leave any card already in the correct
+    // position untouched so embedded iframes/media and in-card state survive.
+    var anchor = self._infiniteSentinel && self._infiniteSentinel.parentNode === list ? self._infiniteSentinel : null
+    for (var i = ordered.length - 1; i >= 0; i--) {
+      var node = ordered[i]
+      if (node.parentNode !== list || node.nextSibling !== anchor) list.insertBefore(node, anchor)
+      anchor = node
+    }
     Object.keys(existing).forEach(function (id) { existing[id].remove() })
     if (focused && focused.isConnected && document.activeElement !== focused && typeof focused.focus === 'function') {
       focused.focus()
