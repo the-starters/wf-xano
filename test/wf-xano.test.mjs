@@ -2209,4 +2209,558 @@ const FULL_PAGE1 = {
   console.log('PASS 65: destroy cancels queued projections')
 }
 
+// ---------- Test 66: pessimistic action payload, dedupe, lifecycle, and self invalidation ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template>
+        <span wf-xano-bind="title"></span>
+        <button wf-xano-action="archive" wf-xano-action-source="api:archive"
+          wf-xano-action-method="PATCH" wf-xano-action-param-record_id="item:id"
+          wf-xano-action-param-mode="literal:archived" wf-xano-action-idempotency="item:id"
+          aria-disabled="false">Archive</button>
+      </div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let releaseAction
+  let listCalls = 0
+  let actionCalls = 0
+  let actionRequest
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/list')) {
+      listCalls += 1
+      return makeRes(PAGE([{ id: 7, title: listCalls === 1 ? 'Open' : 'Archived' }], 1))
+    }
+    actionCalls += 1
+    actionRequest = opts
+    return new Promise((resolve) => {
+      releaseAction = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 7, secret: 'not-public' }) })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const events = []
+  inst.on('actionStart', (event) => events.push(event))
+  inst.on('actionSuccess', (event) => events.push(event))
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  const first = inst.runAction(button)
+  const duplicate = inst.runAction(button)
+  assert.equal(first, duplicate, 'same action/item returns the one active mutation promise')
+  assert.ok(await waitFor(() => inst.getState().mutation['archive:7']?.status === 'pending'))
+  assert.equal(button.disabled, true)
+  assert.equal(button.getAttribute('aria-busy'), 'true')
+  assert.equal(button.classList.contains('is-wf-xano-mutating'), true)
+  assert.equal(root.classList.contains('is-wf-xano-mutating'), true)
+  assert.equal(actionCalls, 1, 'duplicate action sends one mutation')
+  assert.equal(actionRequest.method, 'PATCH')
+  assert.deepEqual(JSON.parse(actionRequest.body), { record_id: 7, mode: 'archived' })
+  assert.equal(actionRequest.headers['Idempotency-Key'], '7')
+  releaseAction()
+  assert.equal(await first, true)
+  assert.ok(await waitFor(() => listCalls === 2 && inst.getState().mutation['archive:7']?.status === 'success'))
+  const refreshed = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  assert.equal(refreshed.disabled, false)
+  assert.equal(refreshed.getAttribute('aria-disabled'), 'false', 'authored ARIA state is restored')
+  assert.equal(refreshed.classList.contains('is-wf-xano-action-success'), true)
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind="title"]').textContent, 'Archived')
+  assert.equal(JSON.stringify(inst.getState()).includes('not-public'), false, 'response body is absent from state')
+  assert.equal(JSON.stringify(events).includes('not-public'), false, 'response body is absent from events')
+  console.log('PASS 66: pessimistic action lifecycle, dedupe, allowlisted payload, and refresh')
+}
+
+// ---------- Test 67: action HTTP failures, timeout, and retry stay safe ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  const failures = [400, 401, 403, 404, 409, 422, 500]
+  let actionAttempt = 0
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => {
+    if (url.endsWith('/list')) {
+      listCalls += 1
+      return makeRes(PAGE([{ id: 8 }], 1))
+    }
+    const attempt = actionAttempt++
+    if (attempt < failures.length) return makeRes({ message: 'private failure body' }, false, failures[attempt])
+    if (attempt === failures.length) return Promise.reject(Object.assign(new Error('private timeout detail'), { name: 'TimeoutError' }))
+    return makeRes({ id: 8, private: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const errors = []
+  inst.on('actionError', (event) => errors.push(event))
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  for (const status of failures) {
+    assert.equal(await inst.runAction(button), false)
+    assert.equal(inst.getState().mutation['archive:8'].status, 'error')
+    assert.equal(inst.getState().mutation['archive:8'].error.status, status)
+  }
+  assert.equal(await inst.runAction(button), false, 'timeout remains retryable')
+  assert.equal(inst.getState().mutation['archive:8'].error.name, 'TimeoutError')
+  assert.equal(JSON.stringify(errors).includes('private'), false, 'safe errors omit response bodies/messages')
+  assert.equal(await inst.runAction(button), true, 'retry succeeds')
+  assert.ok(await waitFor(() => listCalls === 2))
+  assert.equal(inst.getState().mutation['archive:8'].status, 'success')
+  const refreshed = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  refreshed.setAttribute('wf-xano-action-param-record_id', 'item:missing')
+  assert.equal(await inst.runAction(refreshed), false, 'invalid binding fails before fetch')
+  assert.deepEqual(inst._activeMutations, {}, 'synchronous validation failure releases the action key')
+  refreshed.setAttribute('wf-xano-action-param-record_id', 'item:id')
+  assert.equal(await inst.runAction(refreshed), true, 'binding can be corrected and retried')
+  console.log('PASS 67: action HTTP failures, timeout, safe errors, and retry')
+}
+
+// ---------- Test 68: external action form bindings and named invalidation are scoped/deduped ----------
+{
+  const markup = `<!doctype html><html><body>
+    <form>
+      <input wf-xano-action-field="reason" value="cleanup">
+      <button id="external-action" wf-xano-instance="a" wf-xano-action="archive"
+        wf-xano-action-source="api:archive" wf-xano-action-auth="none"
+        wf-xano-action-param-reason="form:reason" wf-xano-action-param-mode="literal:archive"
+        wf-xano-action-idempotency="literal:operation-1" wf-xano-action-invalidate="a,b,a">Archive</button>
+    </form>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="api:a" wf-xano-auth="none">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="api:b" wf-xano-auth="none">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push({ url, opts })
+    if (url.endsWith('/archive')) return makeRes({ ok: true })
+    return makeRes(PAGE([{ id: url.endsWith('/a') ? 'a1' : 'b1', title: 'Row' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => calls.filter((call) => !call.url.endsWith('/archive')).length === 2))
+  const inst = w.WfXano.get('a')
+  const button = w.document.querySelector('#external-action')
+  await assert.rejects(w.WfXano.get('b').runAction(button), /does not belong to instance/)
+  button.click()
+  assert.ok(await waitFor(() => inst.getState().mutation.archive?.status === 'success'))
+  const mutation = calls.filter((call) => call.url.endsWith('/archive'))[0]
+  assert.deepEqual(JSON.parse(mutation.opts.body), { reason: 'cleanup', mode: 'archive' })
+  assert.equal(mutation.opts.headers['Idempotency-Key'], 'operation-1')
+  assert.equal(calls.filter((call) => call.url.endsWith('/a')).length, 2, 'A invalidated once')
+  assert.equal(calls.filter((call) => call.url.endsWith('/b')).length, 2, 'B invalidated once')
+  assert.equal(button.classList.contains('is-wf-xano-action-success'), true)
+  console.log('PASS 68: external form action and named invalidation scoping')
+}
+
+// ---------- Test 69: account switch aborts pending authenticated mutations ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a'
+  let actionAborted = false
+  let actionCalls = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = (url, opts) => {
+    if (url.includes('/auth/trade-token')) {
+      const member = JSON.parse(opts.body).token
+      return makeRes({ authToken: `xano-${member}` })
+    }
+    if (url.endsWith('/list')) {
+      const member = opts.headers.Authorization.endsWith('member-a') ? 'a' : 'b'
+      return makeRes(PAGE([{ id: member, title: member }], 1))
+    }
+    actionCalls += 1
+    return new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        actionAborted = true
+        reject(new w.DOMException('Aborted', 'AbortError'))
+      })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[data-wf-xano-id="a"] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const pending = inst.runAction(root.querySelector('[wf-xano-item] [wf-xano-action]'))
+  assert.ok(await waitFor(() => actionCalls === 1 && inst.getState().mutation['archive:a']?.status === 'pending'))
+  session = 'member-b'
+  await inst.load()
+  assert.equal(await pending, false)
+  assert.equal(actionAborted, true)
+  assert.deepEqual(inst.getState().mutation, {}, 'previous-account mutation state is cleared')
+  assert.ok(root.querySelector('[data-wf-xano-id="b"]'))
+  console.log('PASS 69: account switch aborts and clears pending authenticated actions')
+}
+
+// ---------- Test 70: destroy aborts a pending action without terminal events ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let aborted = false
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 9 }], 1))
+    return new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        aborted = true
+        reject(new w.DOMException('Aborted', 'AbortError'))
+      })
+    })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const terminal = []
+  inst.on('actionSuccess', (event) => terminal.push(event))
+  inst.on('actionError', (event) => terminal.push(event))
+  const pending = inst.runAction(root.querySelector('[wf-xano-item] [wf-xano-action]'))
+  assert.ok(await waitFor(() => inst.getState().mutation['archive:9']?.status === 'pending'))
+  inst.destroy()
+  assert.equal(await pending, false)
+  assert.equal(aborted, true)
+  assert.equal(inst.getState().status, 'destroyed')
+  assert.deepEqual(inst.getState().mutation, {})
+  assert.deepEqual(terminal, [])
+  console.log('PASS 70: destroy aborts pending actions without stale terminal events')
+}
+
+// ---------- Test 71: action method and authenticated-origin guards block writes ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list">
+      <div wf-xano-template><button wf-xano-action="archive" wf-xano-action-source="api:archive"
+        wf-xano-action-method="GET" wf-xano-action-param-record_id="item:id">Archive</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let mutationCalls = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('member-a') }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = (url) => {
+    if (url.includes('/auth/trade-token')) return makeRes({ authToken: 'xano-a' })
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 10 }], 1))
+    mutationCalls += 1
+    return makeRes({ ok: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] [wf-xano-action]')))
+  const inst = root.__wfXano
+  const button = root.querySelector('[wf-xano-item] [wf-xano-action]')
+  await assert.rejects(inst.runAction(button), /Invalid wf-xano action configuration/)
+  button.setAttribute('wf-xano-action-method', 'POST')
+  button.setAttribute('wf-xano-action-source', 'https://outside.example/mutate')
+  await assert.rejects(inst.runAction(button), /outside xanoBase origin/)
+  assert.equal(mutationCalls, 0)
+  assert.deepEqual(inst.getState().mutation, {})
+  console.log('PASS 71: action method and authenticated-origin guards')
+}
+
+// ---------- Test 72: keyed reconciliation preserves node and interactive state ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none"
+      wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template>
+        <span wf-xano-bind="title"></span><input wf-xano-bind="draft">
+        <div class="clamp"><button wf-xano-element="show-more" wf-xano-class="clamp">More</button></div>
+        <div wf-xano-list><span wf-xano-bind="title">nested-owned</span></div>
+      </div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let rows = [
+    { uuid: 'a', title: 'Alpha', draft: 'server-a' },
+    { uuid: 'b', title: 'Beta', draft: 'server-b' },
+  ]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(rows, rows.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list][wf-xano-source]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 2))
+  const first = root.querySelector('[data-wf-xano-id="a"]')
+  const input = first.querySelector('input')
+  input.value = 'local draft'
+  input.focus()
+  first.classList.add('is-expanded-local')
+  rows = [
+    { uuid: 'b', title: 'Beta revised', draft: 'server-b-2' },
+    { uuid: 'a', title: 'Alpha revised', draft: 'server-a-2' },
+  ]
+  await root.__wfXano.refresh()
+  const cards = root.querySelectorAll(':scope > [wf-xano-item]')
+  assert.equal(cards[1], first, 'same keyed DOM node is moved, not replaced')
+  assert.equal(first.querySelector('[wf-xano-bind="title"]').textContent, 'Alpha revised')
+  assert.equal(input.value, 'local draft', 'dirty focused input is preserved')
+  assert.equal(w.document.activeElement, input, 'focus is preserved')
+  assert.equal(first.classList.contains('is-expanded-local'), true, 'local expanded state is preserved')
+  assert.equal(first.querySelector('[wf-xano-list]:not([wf-xano-source]) [wf-xano-bind]').textContent, 'nested-owned', 'nested owner is not rebound')
+  assert.deepEqual([...cards].map((card) => card.getAttribute('data-wf-xano-id')), ['b', 'a'])
+  assert.equal(root.__wfXano.audit().ok, true)
+  rows = [{ uuid: 'b', title: 'Duplicate 1' }, { uuid: 'b', title: 'Duplicate 2' }]
+  await root.__wfXano.refresh()
+  assert.equal(root.__wfXano.getState().status, 'error', 'invalid key sets fail closed')
+  assert.deepEqual([...root.querySelectorAll(':scope > [wf-xano-item]')].map((card) => card.getAttribute('data-wf-xano-id')), ['b', 'a'], 'invalid response cannot partially mutate DOM')
+  console.log('PASS 72: keyed reconciliation preserves identity, focus, input, expansion, and nested ownership')
+}
+
+// ---------- Test 73: optimistic partial response refreshes and converges ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-param-record_id="item:id"
+        wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+        wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => {
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 1, status: ++listCalls === 1 ? 'Live' : 'Closed' }], 1))
+    return new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) }) })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  const action = root.__wfXano.runAction(card.querySelector('button'))
+  assert.ok(await waitFor(() => card.querySelector('[wf-xano-bind]').textContent === 'Closed'), 'overlay paints before response')
+  release()
+  assert.equal(await action, true)
+  assert.equal(listCalls, 2, 'partial response invalidates the authoritative list')
+  assert.equal(root.querySelector('[wf-xano-item]'), card, 'authoritative refresh keeps stable node')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 73: optimistic partial response converges through authoritative refresh')
+}
+
+// ---------- Test 74: optimistic failure rolls back exactly ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 2, status: 'Live' }], 1))
+    : new Promise((resolve) => { release = () => resolve({ ok: false, status: 409, json: () => Promise.resolve({ secret: 'hidden' }) }) })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  const action = root.__wfXano.runAction(card.querySelector('button'))
+  assert.ok(await waitFor(() => card.querySelector('[wf-xano-bind]').textContent === 'Closed'))
+  release()
+  assert.equal(await action, false)
+  assert.equal(card.querySelector('[wf-xano-bind]').textContent, 'Live')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Live')
+  assert.equal(root.__wfXano.getState().mutation['close:2'].error.status, 409)
+  console.log('PASS 74: optimistic failure restores the exact pre-mutation snapshot')
+}
+
+// ---------- Test 75: full authoritative response reconciles without self refetch ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closing"
+        wf-xano-action-optimistic-rollback="item:status" wf-xano-action-response="item">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? (listCalls += 1, makeRes(PAGE([{ id: 3, status: 'Live' }], 1)))
+    : makeRes({ id: 3, status: 'Closed' })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  assert.equal(await root.__wfXano.runAction(root.querySelector('[wf-xano-item] button[wf-xano-action]')), true)
+  assert.equal(listCalls, 1)
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind]').textContent, 'Closed')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 75: full authoritative response reconciles without redundant self refresh')
+}
+
+// ---------- Test 76: focused non-text control survives keyed optimistic reconciliation ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><input type="checkbox" class="toggle"><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status" wf-xano-action-response="item">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 7, status: 'Live' }], 1))
+    : makeRes({ id: 7, status: 'Closed' })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  // A non-text control the user focuses (not the action control, which is disabled while pending).
+  const toggle = card.querySelector('input.toggle')
+  // Mimic Chromium/WebKit: selectionStart/selectionEnd getters throw on non-text inputs.
+  Object.defineProperty(toggle, 'selectionStart', { configurable: true, get() { throw new w.DOMException('not applicable', 'InvalidStateError') } })
+  Object.defineProperty(toggle, 'selectionEnd', { configurable: true, get() { throw new w.DOMException('not applicable', 'InvalidStateError') } })
+  toggle.focus()
+  assert.equal(w.document.activeElement, toggle, 'non-text control is focused before reconciliation')
+  assert.equal(await root.__wfXano.runAction(card.querySelector('button')), true, 'optimistic reconciliation does not throw while a non-text control is focused')
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind]').textContent, 'Closed')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  assert.notEqual(root.__wfXano.getState().status, 'error', 'list is not wrongly cleared')
+  assert.equal(w.document.activeElement, root.querySelector('[wf-xano-item] input.toggle'), 'focus on the non-text control is preserved through reconciliation')
+  console.log('PASS 76: focused non-text control survives keyed optimistic reconciliation')
+}
+
+// ---------- Test 77: keyed refresh failure preserves existing cards and store ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let fail = false
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => fail
+    ? Promise.reject(new w.Error('network down'))
+    : makeRes(PAGE([{ uuid: 'a', title: 'Alpha' }, { uuid: 'b', title: 'Beta' }], 2))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 2))
+  const cardA = root.querySelector('[data-wf-xano-id="a"]')
+  fail = true
+  await root.__wfXano.refresh()
+  assert.equal(root.__wfXano.getState().status, 'error', 'transient refresh failure surfaces error state')
+  assert.equal(root.querySelectorAll('[wf-xano-item]').length, 2, 'keyed cards survive a transient refresh failure')
+  assert.equal(root.querySelector('[data-wf-xano-id="a"]'), cardA, 'existing keyed node is not recreated')
+  assert.deepEqual(root.__wfXano.getState().data.items.map((i) => i.uuid), ['a', 'b'], 'authoritative store is preserved on refresh error')
+  console.log('PASS 77: keyed refresh failure preserves existing cards and authoritative store')
+}
+
+// ---------- Test 78: keyed reconcile leaves already-ordered cards in place ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let rows = [
+    { uuid: 'a', title: 'Alpha' },
+    { uuid: 'b', title: 'Beta' },
+    { uuid: 'c', title: 'Gamma' },
+  ]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(rows, rows.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 3))
+  const cards = ['a', 'b', 'c'].map((id) => root.querySelector('[data-wf-xano-id="' + id + '"]'))
+  // Instrument insertBefore to catch needless reparenting of unchanged cards.
+  const list = cards[0].parentNode
+  let moves = 0
+  const nativeInsert = list.insertBefore.bind(list)
+  list.insertBefore = (node, ref) => { moves += 1; return nativeInsert(node, ref) }
+  rows = [
+    { uuid: 'a', title: 'Alpha revised' },
+    { uuid: 'b', title: 'Beta revised' },
+    { uuid: 'c', title: 'Gamma revised' },
+  ]
+  await root.__wfXano.refresh()
+  assert.equal(moves, 0, 'unchanged order does not reparent any card')
+  assert.deepEqual([...root.querySelectorAll('[wf-xano-item]')].map((c) => c.getAttribute('data-wf-xano-id')), ['a', 'b', 'c'])
+  assert.equal(root.querySelector('[data-wf-xano-id="a"] [wf-xano-bind]').textContent, 'Alpha revised', 'cards still rebind in place')
+  // A reorder moves only what must move, and the same nodes are reused.
+  rows = [
+    { uuid: 'c', title: 'Gamma' },
+    { uuid: 'a', title: 'Alpha' },
+    { uuid: 'b', title: 'Beta' },
+  ]
+  await root.__wfXano.refresh()
+  assert.equal(root.querySelector('[data-wf-xano-id="c"]'), cards[2], 'reused node identity survives reorder')
+  assert.deepEqual([...root.querySelectorAll('[wf-xano-item]')].map((c) => c.getAttribute('data-wf-xano-id')), ['c', 'a', 'b'])
+  console.log('PASS 78: keyed reconcile leaves already-ordered cards untouched')
+}
+
+// ---------- Test 79: optimistic partial refresh converges self even when invalidate omits self ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-param-record_id="item:id"
+        wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+        wf-xano-action-optimistic-value="literal:Closed" wf-xano-action-optimistic-rollback="item:status"
+        wf-xano-action-invalidate="ghost">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 1, status: ++listCalls === 1 ? 'Live' : 'Closed' }], 1))
+    : makeRes({ ok: true })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  assert.equal(await root.__wfXano.runAction(card.querySelector('button')), true)
+  assert.equal(listCalls, 2, 'partial response refreshes the owning instance even when invalidate omits self')
+  assert.equal(root.querySelector('[wf-xano-item]'), card, 'authoritative refresh keeps the stable node')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 79: optimistic partial refresh converges self even when invalidate omits self')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

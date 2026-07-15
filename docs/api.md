@@ -81,6 +81,7 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `clearParams()` | Restore the static `wf-xano-param-*` baseline and reload page 1. |
 | `userParams()` | Return only parameters that differ from the static baseline. |
 | `getState()` | Return a defensive snapshot of status, data, query, local, mutation, safe error metadata, and revision. |
+| `runAction(control)` | Run one configured `wf-xano-action` control. Duplicate calls for the same action/item share one promise. Resolves `true` after mutation success and declared invalidation, otherwise `false`; invalid configuration rejects. |
 | `subscribe(handler)` | Subscribe to the complete state; immediately receives the current snapshot. Returns an unsubscribe function. |
 | `subscribe(selector, handler)` | Subscribe to a selected state slice. The handler runs only when the selected value changes by identity. Returns an unsubscribe function. |
 | `audit()` | Return a privacy-safe comparison of rendered stable IDs/query metadata against the store projection. |
@@ -96,6 +97,9 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `error` | `Error` | After a failed request. |
 | `beforeRender` | `(items, result)` | **Transform hook** — runs between fetch and render. Return a replacement items array (sync or async) to filter, augment, or reorder what renders. |
 | `stateChange` | `{ reason, previous: { status, revision }, current: { status, revision } }` | Privacy-safe metadata after a store transition. Use `subscribe` when the state value itself is needed. |
+| `actionStart` | `{ action, key, itemId }` | One accepted action entered its pending state. |
+| `actionSuccess` | `{ action, key, itemId, status }` | Xano accepted the mutation. Response bodies and auth data are excluded. |
+| `actionError` | `{ action, key, itemId, error: { name, status? } }` | Mutation failed with safe error metadata; raw messages and response bodies are excluded. |
 
 ```js
 // Example: client-side augmentation before render
@@ -156,6 +160,30 @@ State can be projected into Webflow-authored elements without page-specific Java
 The attributes are opt-in, scoped to their wrapper or `wf-xano-instance`, and updated in one
 batched pass per transition group. Expressions reuse the non-evaluating `wf-xano-if` parser. See
 the [attribute reference](attributes.md#reactive-state-projections) for the complete grammar.
+
+### Actions and reconciliation (v0.21–v0.22)
+
+`runAction(control)` and `wf-xano-action` provide an opt-in mutation state machine. Payloads are
+limited to explicitly declared scalar item fields, marked controls in the closest form, and authored
+literals. The endpoint and method are static configuration. While pending, duplicate action/item
+calls share one request; after success, `self` or named instances refresh from Xano.
+
+```js
+instance.subscribe(
+  function (state) { return state.mutation['archive:42'] },
+  function (mutation) { console.log(mutation && mutation.status) }
+)
+```
+
+Mutation entries contain only `{ status, action, itemId, error }`; no response body or credential is
+stored. Account switches and teardown abort active requests. See the
+[action attribute contract](attributes.md#pessimistic-actions) for payload and invalidation grammar.
+
+In v0.22, wrappers may opt into stable-key DOM reconciliation. Actions on those lists may opt into
+a one-field optimistic overlay only when they declare the matching `item:<field>` rollback source.
+Full authoritative item responses reconcile directly; partial responses use the existing
+invalidation path. Public action events remain metadata-only and never expose response bodies. See
+[keyed reconciliation and optimistic actions](attributes.md#keyed-reconciliation-and-optimistic-actions-v022).
 
 ### Favorite DOM events
 

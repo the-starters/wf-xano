@@ -23,6 +23,9 @@
       .pager button.is-active { background: #434b43; color: #fff; border-color: #434b43; }
       .pager button.is-disabled { opacity: 0.4; pointer-events: none; }
       .state { padding: 16px; color: #8a917f; }
+      .action { margin-top: 10px; border: 1px solid #8a917f; border-radius: 7px; padding: 5px 9px; background: #fff; cursor: pointer; }
+      .action.is-wf-xano-mutating { opacity: 0.55; }
+      .action.is-wf-xano-action-success { border-color: #2f6b2f; color: #2f6b2f; }
     </style>
   </head>
   <body>
@@ -41,6 +44,15 @@
         }))
         window.fetch = function (url, opts) {
           const body = JSON.parse((opts && opts.body) || '{}')
+          if (url.endsWith('/archive-test')) {
+            const row = ALL.find((item) => item.id === Number(body.record_id))
+            if (row) row.status = 'Closed'
+            return new Promise((resolve) => setTimeout(() => resolve({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ id: body.record_id, status: 'Closed' }),
+            }), 250))
+          }
           let items = ALL
           if (body.status) items = items.filter((o) => o.status === body.status)
           const per = body.per_page || 20
@@ -66,8 +78,9 @@
       <h1>My opportunities <small>(<span wf-xano-element="total" wf-xano-instance="opps">0</span>)</small></h1>
       <p class="meta">Showing <span wf-xano-element="count-from" wf-xano-instance="opps">0</span>–<span wf-xano-element="count-to" wf-xano-instance="opps">0</span> of <span wf-xano-element="total" wf-xano-instance="opps">0</span></p>
       <p class="meta">Reactive mirror: <span wf-xano-state="data.total" wf-xano-instance="opps">0</span> total · <span wf-xano-state="status" wf-xano-instance="opps">idle</span></p>
+      <p class="meta" id="action-canary-status">Action canary: idle</p>
 
-      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5" wf-xano-class-state="is-reactive-loading:status === 'loading'">
+      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5" wf-xano-reconcile="keyed" wf-xano-class-state="is-reactive-loading:status === 'loading'">
         <div class="toolbar">
           <label>Status
             <select wf-xano-filter="status">
@@ -79,7 +92,7 @@
           </label>
         </div>
 
-        <a wf-xano-element="template" class="opportunity-card" wf-xano-link="id" wf-xano-link-prefix="/opportunities-details---brand-view?opp=">
+        <article wf-xano-element="template" class="opportunity-card">
           <h3 wf-xano-bind="title"></h3>
           <p wf-xano-bind="description"></p>
           <div class="meta">
@@ -90,7 +103,15 @@
             <span class="pill pill-closed" wf-xano-if="status === 'Closed'" wf-xano-display="inline-block">Closed</span>
             <span class="pill pill-review" wf-xano-if="status === 'Pending Review'" wf-xano-display="inline-block">In review</span>
           </div>
-        </a>
+          <a wf-xano-link="id" wf-xano-link-prefix="/opportunities-details---brand-view?opp=">View</a>
+          <button class="action" wf-xano-action="archive" wf-xano-action-source="opp30:brand/opportunities/archive-test"
+            wf-xano-action-auth="none" wf-xano-action-param-record_id="item:id"
+            wf-xano-action-param-status="literal:Closed" wf-xano-action-idempotency="item:id"
+            wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+            wf-xano-action-optimistic-value="literal:Closed" wf-xano-action-optimistic-rollback="item:status">
+            Archive (mock)
+          </button>
+        </article>
 
         <div class="state" wf-xano-element="empty" style="display:none">No opportunities yet.</div>
         <div class="state" wf-xano-element="loader">Loading…</div>
@@ -105,6 +126,37 @@
       </div>
     </div>
 
+    <script>
+      if (new URLSearchParams(location.search).get('action-canary') === '1') {
+        window.WfXano = window.WfXano || []
+        window.WfXano.push(function (wfx) {
+          const instance = wfx.get('opps')
+          let clicked = false
+          let canaryCard = null
+          instance.on('actionStart', function () {
+            document.body.dataset.actionCanary = 'pending'
+            document.body.dataset.optimisticPaint = canaryCard && canaryCard.querySelector('.pill-closed').style.display !== 'none' ? 'pass' : 'fail'
+            document.querySelector('#action-canary-status').textContent = 'Action canary: pending'
+          })
+          instance.on('actionSuccess', function () {
+            document.body.dataset.actionCanary = 'success'
+            document.querySelector('#action-canary-status').textContent = 'Action canary: success'
+          })
+          instance.on('results', function () {
+            if (clicked) {
+              document.body.dataset.stableNode = document.querySelector('[data-wf-xano-id="100"]') === canaryCard ? 'pass' : 'fail'
+              return
+            }
+            const button = document.querySelector('[wf-xano-item] [wf-xano-action="archive"]')
+            if (button) {
+              clicked = true
+              canaryCard = button.closest('[wf-xano-item]')
+              button.click()
+            }
+          })
+        })
+      }
+    </script>
     <script src="../wf-xano.js"></script>
   </body>
 </html>

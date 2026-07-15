@@ -70,6 +70,80 @@ matching `wf-xano-instance` key.
 Projection updates are batched into one microtask pass per synchronous transition group. Existing
 `total`, `loader`, `empty`, `error`, and item `wf-xano-if` roles remain supported unchanged.
 
+### Pessimistic actions
+
+These v0.21 attributes opt a control into one Xano-authoritative mutation. The runtime disables the
+control, sends exactly one request per active action/item key, records safe lifecycle state, then
+refreshes the declared list instances. It never constructs an endpoint from record data.
+
+```html
+<button
+  wf-xano-action="archive"
+  wf-xano-action-source="opp30:opportunities/archive"
+  wf-xano-action-method="PATCH"
+  wf-xano-action-param-record_id="item:id"
+  wf-xano-action-param-status="literal:Archived"
+  wf-xano-action-idempotency="item:id"
+  wf-xano-action-invalidate="self,counts">
+  Archive
+</button>
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `wf-xano-action` | ✅ | Stable authored action name (`archive`, `approve`, etc.). The active key is action + current item ID when the control is inside a rendered card. |
+| `wf-xano-action-source` | ✅ | Literal Xano source in the same grammar as `wf-xano-source`. Record/form values cannot alter it. |
+| `wf-xano-action-method` | — | `POST` (default), `PATCH`, `PUT`, or `DELETE`. `GET` is rejected for actions. |
+| `wf-xano-action-param-<field>` | — | One allowlisted JSON payload field. Its value must be `item:<path>`, `form:<field>`, or `literal:<text>`. Item values must be scalar. |
+| `wf-xano-action-field` | for `form:` | Explicitly marks the input/select/textarea that may supply a named `form:` binding. Only controls in the action's closest form are considered. |
+| `wf-xano-action-idempotency` | — | Optional binding in the same grammar; sent as `Idempotency-Key` only when the Xano endpoint supports that key's semantics. |
+| `wf-xano-action-invalidate` | — | Comma-separated instance keys to refresh after success. `self` means the owning instance and is the default. Repeated targets are deduplicated. |
+| `wf-xano-action-auth="none"` | — | Disables inherited Memberstack/Xano authentication for an explicitly public test endpoint. Actions otherwise inherit their list's auth mode. |
+
+Pending controls receive `disabled` when supported, `aria-busy="true"`, `aria-disabled="true"`, and
+`is-wf-xano-mutating`; the wrapper also receives `is-wf-xano-mutating`. Terminal controls receive
+`is-wf-xano-action-success` or `is-wf-xano-action-error`. Mutation state is available under
+`mutation["<action>:<item-id>"]` through `getState()`/`subscribe()`. Account changes and `destroy()`
+abort active actions and clear their state. Xano must always resolve member identity, permission,
+record validity, and idempotency server-side; a DOM item ID is never authorization evidence.
+Authenticated actions are restricted to the configured `xanoBase` origin. Public actions may opt
+out with action auth `none`.
+
+### Keyed reconciliation and optimistic actions (v0.22)
+
+Add `wf-xano-reconcile="keyed"` to a wrapper to update, move, insert, and remove cards by stable
+identity instead of replacing every card. `wf-xano-key="uuid"` changes the identity field; the
+default is canonical `id`. Every result must have a unique scalar key. Keyed updates preserve
+focused or user-edited form values, selection, card-local classes/state, and nested instance
+ownership.
+
+Optimistic behavior is action-level opt-in and requires a keyed list plus an exact inverse:
+
+```html
+<button
+  wf-xano-action="close"
+  wf-xano-action-source="opp30:opportunities/close"
+  wf-xano-action-optimistic="true"
+  wf-xano-action-optimistic-field="status"
+  wf-xano-action-optimistic-value="literal:Closed"
+  wf-xano-action-optimistic-rollback="item:status"
+  wf-xano-action-response="item">
+  Close
+</button>
+```
+
+| Attribute | Meaning |
+| --- | --- |
+| `wf-xano-action-optimistic="true"` | Enables the overlay. Omission keeps v0.21 pessimistic behavior. |
+| `wf-xano-action-optimistic-field` | One top-level scalar record field to overlay. |
+| `wf-xano-action-optimistic-value` | Next value using the existing `item:`, `form:`, or `literal:` grammar. |
+| `wf-xano-action-optimistic-rollback` | Must be exactly `item:<optimistic-field>` so the runtime can capture and restore the prior value. |
+| `wf-xano-action-response="item"` | Declares a complete authoritative record response with the same stable key. Otherwise normal invalidation/refetch runs. |
+
+Do not enable optimistic mode for payments/entitlements, unrecoverable deletes, notifications,
+non-idempotent multi-record work, or any action without an exact inverse. Xano remains the mutation
+and authorization authority.
+
 ### Favorites
 
 Favorites are authenticated, member-scoped controls that work inside cards rendered by either

@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.22.0 — Unreleased
+
+- Opt-in keyed reconciliation with `wf-xano-reconcile="keyed"` and configurable `wf-xano-key`
+  (default `id`). Stable cards update/move in place while removed cards are pruned.
+- Keyed refreshes preserve focused/dirty form values, selection, card-local expanded state, and
+  nested wf-xano instance ownership.
+- Opt-in single-field optimistic overlays require an explicit next value and exact rollback source.
+  Failures restore the pre-mutation snapshot; partial responses refresh Xano, while declared full
+  item responses reconcile directly.
+- Terminal mutation entries are pruned after short-lived success/error styling.
+- Mocked coverage for stable identity, optimistic success, rollback, authoritative response
+  reconciliation, and source/minified parity. No production mutation was run.
+
+## v0.21.0 — Unreleased
+
+### Added
+
+- Opt-in, pessimistic `wf-xano-action` controls with static endpoint/method configuration and
+  allowlisted `item:`, `form:`, and `literal:` payload bindings.
+- Per-action/item request deduplication, optional idempotency headers, safe mutation state/events,
+  accessible pending/error/success control states, and deduplicated named-instance invalidation.
+- Mocked action harness coverage for success, duplicate clicks, HTTP failures, timeout/retry,
+  account switching, teardown, form payloads, and source/minified parity.
+
+### Security
+
+- Action response bodies, server messages, and auth data never enter mutation state or lifecycle
+  events. Account changes and instance teardown abort active mutations before stale results apply.
+- Dynamic endpoints, GET actions, object payload bindings, and unmarked form fields are rejected;
+  Xano remains responsible for member identity, permission, validation, and idempotency.
+
 ## v0.20.0 — Unreleased
 
 ### Added

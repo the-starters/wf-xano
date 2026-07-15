@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.20.0'
+  var VERSION = '0.22.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -218,6 +218,15 @@
     if (Object.prototype.hasOwnProperty.call(obj, path)) return obj[path]
     return path.split('.').reduce(function (o, k) {
       return o == null ? undefined : o[k]
+    }, obj)
+  }
+
+  /** Own-property-only lookup for values that can enter mutation payloads. */
+  function getOwn(obj, path) {
+    if (obj == null || !/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(path || '')) return undefined
+    return path.split('.').reduce(function (value, key) {
+      if (value == null || !Object.prototype.hasOwnProperty.call(value, key)) return undefined
+      return value[key]
     }, obj)
   }
 
@@ -793,12 +802,19 @@
   /* ============================ CARD RENDER =========================== */
   // Every scan includes the card root (root-element lesson: the template
   // root is often the <a> or carries binds itself).
-  function fillCard(card, item) {
+  function cardBindings(card, selector) {
+    var root = ownerRoot(card)
+    return qaWithRoot(card, selector).filter(function (el) {
+      return ownerRoot(el) === root
+    })
+  }
+
+  function fillCard(card, item, preserveInteractive) {
     // text / form-value binds (dot paths + optional wf-xano-format). Missing
     // values fall back through the comma-separated fields in order; epoch 0
     // is treated as missing only when a date format is active, e.g.
     // wf-xano-bind="last_edited_at" wf-xano-fallback="published_at,created_at".
-    qaWithRoot(card, '[wf-xano-bind]').forEach(function (el) {
+    cardBindings(card, '[wf-xano-bind]').forEach(function (el) {
       var raw = get(item, el.getAttribute('wf-xano-bind'))
       var fb = el.getAttribute('wf-xano-fallback')
       var kind = el.getAttribute('wf-xano-format')
@@ -819,7 +835,12 @@
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
         // Form-value binds take the raw formatted value — prefix/suffix are a
         // display affordance and would corrupt a submitted/filter value.
-        el.value = value
+        var priorBound = el.getAttribute('data-wf-xano-bound-value')
+        var userChanged = priorBound != null && String(el.value) !== priorBound
+        if (!preserveInteractive || (document.activeElement !== el && !userChanged)) {
+          el.value = value
+          el.setAttribute('data-wf-xano-bound-value', String(value))
+        }
       } else {
         // wf-xano-prefix / wf-xano-suffix wrap a non-blank display value with
         // literal text (e.g. wf-xano-prefix=" / " to join an adjacent bind
@@ -835,7 +856,7 @@
       }
     })
     // image src binds
-    qaWithRoot(card, '[wf-xano-src]').forEach(function (el) {
+    cardBindings(card, '[wf-xano-src]').forEach(function (el) {
       // Pipe-separated field fallbacks mirror wf-algolia's image grammar:
       // wf-xano-src="profile_photo|profile-photo-xano|profile-photo".
       // Resolve left-to-right and use the first non-blank value.
@@ -861,12 +882,12 @@
       }
     })
     // conditionals (wf-xano-display mirrors wf-algolia-display; default clears inline style)
-    qaWithRoot(card, '[wf-xano-if]').forEach(function (el) {
+    cardBindings(card, '[wf-xano-if]').forEach(function (el) {
       var visible = evalIf(el.getAttribute('wf-xano-if'), item)
       el.style.display = visible ? el.getAttribute('wf-xano-display') || '' : 'none'
     })
     // links
-    qaWithRoot(card, '[wf-xano-link]').forEach(function (a) {
+    cardBindings(card, '[wf-xano-link]').forEach(function (a) {
       var field = a.getAttribute('wf-xano-link')
       var pre = a.getAttribute('wf-xano-link-prefix') || ''
       var suf = a.getAttribute('wf-xano-link-suffix') || ''
@@ -1149,6 +1170,7 @@
     var reload = []
     ;(instances || []).forEach(function (instance) {
       if (!instance.auth || !instance._state) return
+      instance._cancelMutations('action:auth-change')
       // The instance that discovered the change is already in load(). Every
       // other member-scoped list must invalidate an old in-flight response
       // and reload from the newly traded account rather than retaining old
@@ -1213,6 +1235,8 @@
     this.threshold = positiveInt(root.getAttribute('wf-xano-threshold'), 0, true)
     this.debounce = positiveInt(root.getAttribute('wf-xano-debounce'), 300, true)
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
+    this.keyField = String(root.getAttribute('wf-xano-key') || 'id').trim() || 'id'
+    this.keyed = root.getAttribute('wf-xano-reconcile') === 'keyed'
     this.page = 1
     this.params = this.readStaticParams()
     // Baseline for clearParams()/tag chips: static wf-xano-param-* values
@@ -1243,6 +1267,8 @@
     this._subscribers = []
     this._projectionScheduled = false
     this._destroyed = false
+    this._activeMutations = {}
+    this._mutationTimers = {}
     this._state = {
       status: 'idle',
       data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
@@ -1321,11 +1347,13 @@
   /** One transition path owns the immutable runtime store. Legacy instance
    *  fields remain the request/render authority during the compatibility
    *  phase; this store is their observable shadow projection. */
-  Instance.prototype._transition = function (patch, reason) {
+  Instance.prototype._transition = function (patch, reason, replaceSlices) {
     var previous = this._state
     var next = Object.assign({}, previous, patch || {})
     ;['data', 'query', 'local', 'mutation'].forEach(function (key) {
-      if (patch && patch[key]) next[key] = Object.assign({}, previous[key], patch[key])
+      if (patch && patch[key]) {
+        next[key] = replaceSlices && replaceSlices[key] ? patch[key] : Object.assign({}, previous[key], patch[key])
+      }
     })
     next.revision = previous.revision + 1
     this._state = freezeStateValue(next)
@@ -1438,6 +1466,302 @@
           el.classList.toggle(className, evalIf(expression, state))
         })
     })
+    this._projectActionControls()
+  }
+
+  /** Return the current item represented by an action control. Only the
+   *  stable DOM ID crosses the DOM/store boundary; raw records are never
+   *  attached to rendered elements. */
+  Instance.prototype._actionItem = function (control) {
+    var card = control.closest ? control.closest('[wf-xano-item]') : null
+    if (!card || ownerRoot(card) !== this.root) return { id: null, item: null }
+    var id = card.getAttribute('data-wf-xano-id')
+    if (id == null) return { id: null, item: null }
+    var self = this
+    var item = this._state.data.items.filter(function (candidate) {
+      var candidateId = candidate && get(candidate, self.keyField)
+      return candidateId != null && String(candidateId) === String(id)
+    })[0]
+    return { id: String(id), item: item || null }
+  }
+
+  function actionName(control) {
+    var name = String(control.getAttribute('wf-xano-action') || '').trim()
+    return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(name) ? name : null
+  }
+
+  Instance.prototype._ownsActionControl = function (control) {
+    if (!control) return false
+    if (this.root.contains(control)) return ownerRoot(control) === this.root
+    return !!(this.key && control.getAttribute('wf-xano-instance') === this.key)
+  }
+
+  /** Read one explicitly declared action value. The grammar is deliberately
+   *  narrow: item fields, marked form controls, or authored literals only. */
+  Instance.prototype._actionValue = function (control, item, spec) {
+    var raw = String(spec || '')
+    var separator = raw.indexOf(':')
+    if (separator < 1) throw new Error('Invalid action binding')
+    var kind = raw.slice(0, separator).trim()
+    var value = raw.slice(separator + 1)
+    if (kind === 'literal') return value
+    if (kind === 'item') {
+      var itemValue = getOwn(item, value.trim())
+      if (itemValue == null || typeof itemValue === 'object') throw new Error('Missing scalar action item value')
+      return itemValue
+    }
+    if (kind === 'form') {
+      var field = value.trim()
+      if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(field)) throw new Error('Invalid action form field')
+      var form = control.closest ? control.closest('form') : null
+      if (!form) throw new Error('Action form not found')
+      var controls = qa(form, '[wf-xano-action-field="' + cssAttr(field) + '"]')
+      if (!controls.length) throw new Error('Action form field not found')
+      var checkable = controls.filter(function (el) {
+        return el instanceof HTMLInputElement && /^(checkbox|radio)$/.test(el.type)
+      })
+      if (checkable.length) {
+        return checkable
+          .filter(function (el) { return el.checked })
+          .map(function (el) { return el.value })
+          .join(',')
+      }
+      return controls[0].value
+    }
+    throw new Error('Unsupported action binding')
+  }
+
+  Instance.prototype._actionPayload = function (control, item) {
+    var self = this
+    var payload = {}
+    Array.prototype.forEach.call(control.attributes, function (attr) {
+      var match = /^wf-xano-action-param-(.+)$/.exec(attr.name)
+      if (!match) return
+      var field = match[1]
+      if (!/^[a-z_][a-z0-9_]*$/.test(field)) throw new Error('Invalid action payload field')
+      payload[field] = self._actionValue(control, item, attr.value)
+    })
+    return payload
+  }
+
+  Instance.prototype._mutationKey = function (control) {
+    var name = actionName(control)
+    if (!name) return null
+    var item = this._actionItem(control)
+    return name + (item.id != null ? ':' + item.id : '')
+  }
+
+  Instance.prototype._setMutation = function (key, value, reason) {
+    if (value && value.status === 'pending' && this._mutationTimers[key]) {
+      window.clearTimeout(this._mutationTimers[key])
+      delete this._mutationTimers[key]
+    }
+    var mutation = Object.assign({}, this._state.mutation)
+    if (value == null) delete mutation[key]
+    else mutation[key] = value
+    this._transition({ mutation: mutation }, reason, { mutation: true })
+  }
+
+  Instance.prototype._pruneMutation = function (key) {
+    var self = this
+    window.clearTimeout(this._mutationTimers[key])
+    this._mutationTimers[key] = window.setTimeout(function () {
+      delete self._mutationTimers[key]
+      if (!self._destroyed) self._setMutation(key, null, 'action:prune')
+    }, 2000)
+  }
+
+  Instance.prototype._optimisticConfig = function (control, item) {
+    if (control.getAttribute('wf-xano-action-optimistic') !== 'true') return null
+    if (!this.keyed || !item || item.id == null || !item.item) throw new Error('Optimistic actions require keyed reconciliation and a stable item')
+    var field = String(control.getAttribute('wf-xano-action-optimistic-field') || '').trim()
+    var nextSpec = control.getAttribute('wf-xano-action-optimistic-value')
+    var rollbackSpec = String(control.getAttribute('wf-xano-action-optimistic-rollback') || '')
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(field) || rollbackSpec !== 'item:' + field || !nextSpec) {
+      throw new Error('Optimistic actions require an exact rollback definition')
+    }
+    var previous = getOwn(item.item, field)
+    if (previous != null && typeof previous === 'object') throw new Error('Optimistic rollback value must be scalar')
+    return { field: field, previous: previous, next: this._actionValue(control, item.item, nextSpec) }
+  }
+
+  Instance.prototype._replaceStateItem = function (id, replacement, reason) {
+    var self = this
+    var items = this._state.data.items.map(function (item) {
+      var itemId = item && get(item, self.keyField)
+      return itemId != null && String(itemId) === String(id) ? replacement : item
+    })
+    var data = Object.assign({}, this._state.data, { items: items })
+    this._transition({ data: data }, reason, { data: true })
+    this._renderItemsKeyed(items, this.listEl || this.template.parentNode)
+  }
+
+  Instance.prototype._overlayItem = function (id, field, value, reason) {
+    var current = this._state.data.items.filter(function (item) {
+      return item && String(get(item, this.keyField)) === String(id)
+    }, this)[0]
+    if (!current) return
+    var replacement = Object.assign({}, current)
+    replacement[field] = value
+    this._replaceStateItem(id, replacement, reason)
+  }
+
+  Instance.prototype._setActionControlState = function (control, state) {
+    var pending = state && state.status === 'pending'
+    control.classList.toggle('is-wf-xano-mutating', !!pending)
+    control.classList.toggle('is-wf-xano-action-error', !!(state && state.status === 'error'))
+    control.classList.toggle('is-wf-xano-action-success', !!(state && state.status === 'success'))
+    control.setAttribute('aria-busy', pending ? 'true' : 'false')
+    if (pending) {
+      if ('disabled' in control && !control.disabled) {
+        control.disabled = true
+        control.setAttribute('data-wf-xano-action-disabled', '')
+      }
+      if (!control.hasAttribute('data-wf-xano-action-aria-disabled')) {
+        var previousAria = control.getAttribute('aria-disabled')
+        control.setAttribute('data-wf-xano-action-aria-disabled', previousAria == null ? '__missing__' : previousAria)
+      }
+      control.setAttribute('aria-disabled', 'true')
+    } else {
+      if (control.hasAttribute('data-wf-xano-action-disabled')) {
+        control.disabled = false
+        control.removeAttribute('data-wf-xano-action-disabled')
+      }
+      if (control.hasAttribute('data-wf-xano-action-aria-disabled')) {
+        var priorAria = control.getAttribute('data-wf-xano-action-aria-disabled')
+        if (priorAria === '__missing__') control.removeAttribute('aria-disabled')
+        else control.setAttribute('aria-disabled', priorAria)
+        control.removeAttribute('data-wf-xano-action-aria-disabled')
+      }
+    }
+  }
+
+  Instance.prototype._projectActionControls = function () {
+    var self = this
+    var pending = false
+    this.qa('[wf-xano-action]').forEach(function (control) {
+      var key = self._mutationKey(control)
+      var state = key ? self._state.mutation[key] : null
+      if (state && state.status === 'pending') pending = true
+      self._setActionControlState(control, state)
+    })
+    this.root.classList.toggle('is-wf-xano-mutating', pending)
+  }
+
+  Instance.prototype._invalidateActions = function (control, skipSelf, forceSelf) {
+    var self = this
+    var spec = String(control.getAttribute('wf-xano-action-invalidate') || 'self')
+    var targets = []
+    // Optimistic partial responses must always converge against Xano, so the
+    // owning instance refreshes once even if the invalidate list omits 'self'.
+    if (forceSelf && !skipSelf) targets.push(self)
+    spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
+      instances.forEach(function (instance) {
+        if ((!skipSelf && key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
+          if (targets.indexOf(instance) === -1) targets.push(instance)
+        }
+      })
+    })
+    return Promise.all(targets.map(function (instance) {
+      return instance.ok && !instance._destroyed ? instance.refresh() : undefined
+    }))
+  }
+
+  /** Execute one action. Pessimistic remains the default; an exact rollback
+   *  contract may opt a keyed item into a temporary overlay. Endpoint and
+   *  method are authored literals; response bodies never reach events. */
+  Instance.prototype.runAction = function (control) {
+    if (!this.ok || this._destroyed || !control) return Promise.resolve(false)
+    if (!this._ownsActionControl(control)) return Promise.reject(new Error('Action control does not belong to instance'))
+    var name = actionName(control)
+    var source = control.getAttribute('wf-xano-action-source')
+    var url = resolveUrl(source)
+    var method = String(control.getAttribute('wf-xano-action-method') || 'POST').toUpperCase()
+    var item = this._actionItem(control)
+    var key = name && (name + (item.id != null ? ':' + item.id : ''))
+    if (!name || !url || ['POST', 'PATCH', 'PUT', 'DELETE'].indexOf(method) === -1 || !key) {
+      return Promise.reject(new Error('Invalid wf-xano action configuration'))
+    }
+    var actionAuth = control.getAttribute('wf-xano-action-auth') !== 'none' && this.auth
+    if (actionAuth && /^http:\/\//i.test(url) && CFG.allowInsecureAuth !== true) {
+      return Promise.reject(new Error('Refusing authenticated action over insecure HTTP'))
+    }
+    if (actionAuth) {
+      try {
+        if (new URL(url, window.location.href).origin !== new URL(XANO_HOST, window.location.href).origin) {
+          return Promise.reject(new Error('Refusing authenticated action outside xanoBase origin'))
+        }
+      } catch (e) {
+        return Promise.reject(new Error('Invalid authenticated action URL'))
+      }
+    }
+    if (this._activeMutations[key]) return this._activeMutations[key].promise
+    var self = this
+    var controller = typeof AbortController === 'function' ? new AbortController() : null
+    var entry = { controller: controller, promise: null }
+    var promise = Promise.resolve().then(async function () {
+      try {
+        var payload = self._actionPayload(control, item.item)
+        var optimistic = self._optimisticConfig(control, item)
+        self._setMutation(key, { status: 'pending', action: name, itemId: item.id, error: null }, 'action:start')
+        if (optimistic) self._overlayItem(item.id, optimistic.field, optimistic.next, 'action:optimistic')
+        self.emit('actionStart', { action: name, key: key, itemId: item.id })
+        var headers = { 'Content-Type': 'application/json' }
+        if (actionAuth) headers.Authorization = 'Bearer ' + (await xanoToken(self))
+        if (controller && controller.signal.aborted) return false
+        var idempotency = control.getAttribute('wf-xano-action-idempotency')
+        if (idempotency) {
+          var idempotencyValue = self._actionValue(control, item.item, idempotency)
+          if (idempotencyValue !== '') headers['Idempotency-Key'] = String(idempotencyValue)
+        }
+        var request = { method: method, headers: headers, body: JSON.stringify(payload), cache: 'no-store' }
+        if (controller) request.signal = controller.signal
+        var res = await fetch(url, request)
+        if (controller && controller.signal.aborted) return false
+        if (!res.ok) throw Object.assign(new Error('wf-xano action ' + res.status), { status: res.status })
+        var reconciled = false
+        if (optimistic && control.getAttribute('wf-xano-action-response') === 'item') {
+          var authoritative = await res.json().catch(function () { return null })
+          var authoritativeId = authoritative && get(authoritative, self.keyField)
+          if (authoritativeId != null && String(authoritativeId) === String(item.id)) {
+            self._replaceStateItem(item.id, authoritative, 'action:reconcile')
+            reconciled = true
+          }
+        }
+        self._setMutation(key, { status: 'success', action: name, itemId: item.id, error: null }, 'action:success')
+        self.emit('actionSuccess', { action: name, key: key, itemId: item.id, status: res.status })
+        await self._invalidateActions(control, reconciled, !!optimistic && !reconciled)
+        self._pruneMutation(key)
+        return true
+      } catch (err) {
+        if ((controller && controller.signal.aborted) || self._destroyed) return false
+        if (typeof optimistic !== 'undefined' && optimistic) {
+          self._overlayItem(item.id, optimistic.field, optimistic.previous, 'action:rollback')
+        }
+        self._setMutation(key, { status: 'error', action: name, itemId: item.id, error: publicError(err) }, 'action:error')
+        self.emit('actionError', { action: name, key: key, itemId: item.id, error: publicError(err) })
+        self._pruneMutation(key)
+        return false
+      } finally {
+        if (self._activeMutations[key] === entry) delete self._activeMutations[key]
+      }
+    })
+    entry.promise = promise
+    this._activeMutations[key] = entry
+    return promise
+  }
+
+  Instance.prototype._cancelMutations = function (reason) {
+    var self = this
+    Object.keys(this._activeMutations).forEach(function (key) {
+      var entry = self._activeMutations[key]
+      if (entry.controller) entry.controller.abort()
+    })
+    this._activeMutations = {}
+    Object.keys(this._mutationTimers).forEach(function (key) { window.clearTimeout(self._mutationTimers[key]) })
+    this._mutationTimers = {}
+    if (!this._destroyed) this._transition({ mutation: {} }, reason || 'action:cancel', { mutation: true })
+    this._projectActionControls()
   }
 
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
@@ -1554,6 +1878,24 @@
   Instance.prototype.bindControls = function () {
     var self = this
     var signal = this._ac ? { signal: this._ac.signal } : false
+
+    // Actions inside rendered cards use root delegation so future clones are
+    // covered. Static controls outside the wrapper bind through instance keys.
+    var handleAction = function (e) {
+      var control = e.target && e.target.closest ? e.target.closest('[wf-xano-action]') : null
+      if (!control) return
+      if (!self._ownsActionControl(control)) return
+      e.preventDefault()
+      self.runAction(control).catch(function () {
+        /* invalid configuration is reflected by the returned promise */
+      })
+    }
+    this.root.addEventListener('click', handleAction, signal)
+    this.qa('[wf-xano-action]').filter(function (el) {
+      return !self.root.contains(el)
+    }).forEach(function (el) {
+      el.addEventListener('click', handleAction, signal)
+    })
 
     // Filters: [wf-xano-filter="field"] — re-fetch on change. Checkbox groups
     // for the same field combine into a comma-separated param.
@@ -1882,7 +2224,7 @@
     // render() re-decides. render() re-shows the empty state accurately once
     // the new page lands. Append loads (load-more / infinite / all) keep prior
     // items by design.
-    if (!append) {
+    if (!append && !this.keyed) {
       var listNow = this.listEl || this.template.parentNode
       qa(listNow, '[wf-xano-item]').forEach(function (c) {
         c.remove()
@@ -1961,13 +2303,13 @@
       if (append) {
         // Keep already-rendered pages and make the failed page retryable.
         this.page = previousPage != null ? previousPage : Math.max(1, this.page - 1)
-      } else {
+      } else if (!err.keyed && !this.keyed) {
         this.render({ items: [], total: 0, page: 1, pages: 1, hasMore: false })
       }
       this._transition(
         {
           status: 'error',
-          data: append ? this._state.data : { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+          data: append || err.keyed || this.keyed ? this._state.data : { items: [], total: 0, page: 1, pages: 1, hasMore: false },
           query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
           error: publicError(err),
         },
@@ -1982,7 +2324,10 @@
     var list = this.listEl || this.template.parentNode
     // Replace mode clears prior clones; append mode (load-more/infinite/all)
     // keeps them and adds the new page below.
-    if (!append) {
+    if (this.keyed) {
+      var keyedItems = append ? this._state.data.items.concat(result.items) : result.items
+      this._renderItemsKeyed(keyedItems, list)
+    } else if (!append) {
       qa(list, '[wf-xano-item]').forEach(function (c) {
         c.remove()
       })
@@ -1993,7 +2338,7 @@
     this.root.classList.toggle('is-wf-xano-empty', !rendered)
     var self = this
     var appended = []
-    result.items.forEach(function (item) {
+    if (!this.keyed) result.items.forEach(function (item) {
       var card = self.template.cloneNode(true)
       clearRole(card, 'template')
       card.setAttribute('wf-xano-item', '')
@@ -2035,6 +2380,72 @@
     if (this.appendMode) this.updateLoadMore(result)
     else this.renderPagination(result)
     this.updateFilterUI()
+  }
+
+  Instance.prototype._renderItemsKeyed = function (items, list) {
+    var self = this
+    var validated = {}
+    items.forEach(function (item) {
+      var rawId = item && get(item, self.keyField)
+      if (rawId == null || typeof rawId === 'object' || validated[String(rawId)]) {
+        throw Object.assign(new Error('wf-xano keyed reconciliation requires unique scalar ' + self.keyField + ' values'), { keyed: true })
+      }
+      validated[String(rawId)] = true
+    })
+    var focused = document.activeElement
+    var selection = null
+    if (focused) {
+      try {
+        if (typeof focused.selectionStart === 'number') {
+          selection = { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection }
+        }
+      } catch (e) { selection = null }
+    }
+    var existing = {}
+    qa(list, '[wf-xano-item]').filter(function (card) { return ownerRoot(card) === self.root }).forEach(function (card) {
+      var id = card.getAttribute('data-wf-xano-id')
+      if (id != null && !existing[id]) existing[id] = card
+      else card.remove()
+    })
+    var appended = []
+    var ordered = []
+    items.forEach(function (item) {
+      var rawId = item && get(item, self.keyField)
+      var id = String(rawId)
+      var card = existing[id]
+      if (card) {
+        fillCard(card, item, true)
+        delete existing[id]
+      } else {
+        card = self.template.cloneNode(true)
+        clearRole(card, 'template')
+        card.setAttribute('wf-xano-item', '')
+        card.setAttribute('data-wf-xano-id', id)
+        card.style.display = ''
+        fillCard(card, item, false)
+        wireShowMore(card)
+        appended.push(card)
+      }
+      ordered.push(card)
+    })
+    // Place cards in item order, but leave any card already in the correct
+    // position untouched so embedded iframes/media and in-card state survive.
+    var anchor = self._infiniteSentinel && self._infiniteSentinel.parentNode === list ? self._infiniteSentinel : null
+    for (var i = ordered.length - 1; i >= 0; i--) {
+      var node = ordered[i]
+      if (node.parentNode !== list || node.nextSibling !== anchor) list.insertBefore(node, anchor)
+      anchor = node
+    }
+    Object.keys(existing).forEach(function (id) { existing[id].remove() })
+    if (focused && focused.isConnected && document.activeElement !== focused && typeof focused.focus === 'function') {
+      focused.focus()
+      if (selection && typeof focused.setSelectionRange === 'function') {
+        focused.setSelectionRange(selection.start, selection.end, selection.direction || 'none')
+      }
+    }
+    if (appended.length && q(list, '[wf-xano-element="show-more"]')) {
+      setTimeout(function () { pruneShowMore(appended) }, 0)
+    }
   }
 
   /** Show/hide the load-more control by whether more pages remain, and mirror
@@ -2142,8 +2553,10 @@
     var domIds = qa(list, '[wf-xano-item]').map(function (el) {
       return String(el.getAttribute('data-wf-xano-id') || '')
     })
+    var self = this
     var storeIds = this._state.data.items.map(function (item) {
-      return item && item.id != null ? String(item.id) : ''
+      var id = item && get(item, self.keyField)
+      return id != null ? String(id) : ''
     })
     var differences = []
     if (JSON.stringify(domIds) !== JSON.stringify(storeIds)) differences.push('item_ids')
@@ -2166,6 +2579,7 @@
 
   /** Tear down: abort listeners, drop rendered items, unregister. */
   Instance.prototype.destroy = function () {
+    this._cancelMutations('action:destroy')
     this._destroyed = true
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()
