@@ -129,7 +129,29 @@ control the same `wf-xano-instance` value:
 Loading modes are `pagination` (default), `more`, `infinite`, and `all`. Any filter, search, or sort
 change resets append modes to page 1 so results cannot mix across different queries.
 
-## 6. Favorites across wf-algolia and wf-xano
+## 6. Declarative create/edit forms
+
+Forms can be the only controller inside a wrapper. Mark every submitted field explicitly; do not
+put member IDs or authorization decisions in the DOM.
+
+```html
+<div wf-xano-element="wrapper" wf-xano-instance="profile-editor">
+  <form wf-xano-form="profile" wf-xano-form-source="dashboard:member/profile"
+    wf-xano-form-method="PATCH" wf-xano-form-invalidate="projects">
+    <label>Name <input wf-xano-field="display_name" required></label>
+    <p wf-xano-error-for="display_name"></p>
+    <label>Bio <textarea wf-xano-field="bio"></textarea></label>
+    <p wf-xano-error-for="form"></p>
+    <button type="submit">Save</button>
+  </form>
+</div>
+```
+
+The form tracks its initial/current values, dirty/touched fields, and submission state. Xano remains
+responsible for resolving the signed-in member and validating every write. File uploads need a
+separate purpose-built upload flow. See the [mocked form example](../examples/declarative-form.html).
+
+## 7. Favorites across wf-algolia and wf-xano
 
 Configure the authenticated favorites base:
 
@@ -172,7 +194,7 @@ toggle, then add `wf-xano-refresh-on="favorite"`:
 The Xano endpoints must derive identity from auth, validate allowed item types/IDs, and enforce a
 unique member/type/item constraint. Never accept a member or Brand ID from the browser.
 
-## 7. Production checklist
+## 8. Production checklist
 
 1. Confirm the endpoint returns the expected paged shape and enforces authorization server-side.
 2. Use explicit HTTPS `xanoBase` and, for authenticated pages, `authBase` values.

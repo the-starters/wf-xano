@@ -2763,4 +2763,331 @@ const FULL_PAGE1 = {
   console.log('PASS 79: optimistic partial refresh converges self even when invalidate omits self')
 }
 
+// ---------- Test 80: declarative form state, allowlisted payload, dedupe, reset, invalidation ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="editor" wf-xano-auth="none">
+      <form wf-xano-form="profile" wf-xano-form-source="api:save" wf-xano-form-auth="none"
+        wf-xano-form-reset-on-success="true" wf-xano-form-invalidate="rows">
+        <input wf-xano-field="name" value="Ada"><input type="checkbox" wf-xano-field="available" checked>
+        <input name="unmarked" value="secret"><span wf-xano-error-for="form" style="display:none"></span>
+        <button type="submit">Save</button>
+      </form>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-instance="rows" wf-xano-source="api:list" wf-xano-auth="none">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  let saveCalls = 0
+  let request
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/list')) {
+      listCalls += 1
+      return makeRes(PAGE([{ id: 1, name: 'Row' }], 1))
+    }
+    saveCalls += 1
+    request = opts
+    return new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ private: 'not-stored' }) }) })
+  }
+  w.eval(LIB)
+  const editorRoot = w.document.querySelector('[wf-xano-instance="editor"]')
+  const form = w.document.querySelector('[wf-xano-form]')
+  assert.ok(await waitFor(() => editorRoot.__wfXano && editorRoot.__wfXano.getState().form.profile))
+  const editor = editorRoot.__wfXano
+  const name = form.querySelector('[wf-xano-field="name"]')
+  name.value = 'Grace'
+  name.dispatchEvent(new w.Event('input', { bubbles: true }))
+  name.dispatchEvent(new w.Event('change', { bubbles: true }))
+  assert.equal(editor.getState().form.profile.current.name, 'Grace')
+  assert.equal(editor.getState().form.profile.dirty.name, true)
+  assert.equal(editor.getState().form.profile.touched.name, true)
+  const first = editor.submitForm(form)
+  const duplicate = editor.submitForm(form)
+  assert.equal(first, duplicate)
+  assert.ok(await waitFor(() => saveCalls === 1 && editor.getState().form.profile.status === 'submitting'))
+  assert.equal(form.querySelector('[type="submit"]').disabled, true)
+  assert.deepEqual(JSON.parse(request.body), { name: 'Grace', available: true })
+  release()
+  assert.equal(await first, true)
+  assert.ok(await waitFor(() => listCalls === 2))
+  assert.equal(name.value, 'Ada', 'reset-on-success restores the authoritative initial snapshot')
+  assert.equal(editor.getState().form.profile.status, 'success')
+  assert.deepEqual(editor.getState().form.profile.dirty, {})
+  assert.equal(JSON.stringify(editor.getState()).includes('not-stored'), false)
+  console.log('PASS 80: declarative form state, payload allowlist, dedupe, reset, and invalidation')
+}
+
+// ---------- Test 81: client and Xano validation errors are scoped and retryable ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper">
+    <form wf-xano-form="signup" wf-xano-form-source="api:signup" wf-xano-form-auth="none">
+      <input type="email" required wf-xano-field="email"><span wf-xano-error-for="email" style="display:none"></span>
+      <span wf-xano-error-for="form" style="display:none"></span><button type="submit">Go</button>
+    </form></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let calls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => {
+    calls += 1
+    if (calls === 1) return makeRes({ errors: { email: 'Already used', secret: 'must not leak' }, message: 'Please fix the form', token: 'hidden' }, false, 422)
+    return makeRes({ ok: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.signup))
+  const inst = root.__wfXano
+  const form = root.querySelector('form')
+  assert.equal(await inst.submitForm(form), false, 'native invalid form does not submit')
+  assert.equal(calls, 0)
+  form.querySelector('input').value = 'ada@example.com'
+  assert.equal(await inst.submitForm(form), false)
+  let state = inst.getState().form.signup
+  assert.equal(state.error.status, 422)
+  assert.equal(state.errors.email, 'Already used')
+  assert.equal(state.errors.form, 'Please fix the form')
+  assert.equal(JSON.stringify(state).includes('must not leak'), false)
+  assert.equal(root.querySelector('[wf-xano-error-for="email"]').textContent, 'Already used')
+  assert.equal(form.querySelector('input').getAttribute('aria-invalid'), 'true')
+  assert.equal(await inst.submitForm(form), true, 'server validation failure remains retryable')
+  assert.equal(inst.getState().form.signup.status, 'success')
+  console.log('PASS 81: client/Xano validation errors are scoped, sanitized, and retryable')
+}
+
+// ---------- Test 82: timeout, conflict, and retry preserve current values ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-auth="none">
+    <form wf-xano-form="edit" wf-xano-form-source="api:edit" wf-xano-form-auth="none" wf-xano-form-timeout="20">
+      <input wf-xano-field="title" value="Draft"><span wf-xano-error-for="form"></span><button type="submit">Save</button>
+    </form></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let attempt = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    attempt += 1
+    if (attempt === 1) return new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
+    if (attempt === 2) return makeRes({ message: 'Record changed; reload and retry' }, false, 409)
+    return makeRes({ ok: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.edit))
+  const inst = root.__wfXano
+  const form = root.querySelector('form')
+  form.querySelector('input').value = 'Edited'
+  form.querySelector('input').dispatchEvent(new w.Event('input', { bubbles: true }))
+  assert.equal(await inst.submitForm(form), false)
+  assert.equal(inst.getState().form.edit.error.name, 'TimeoutError')
+  assert.equal(inst.getState().form.edit.current.title, 'Edited')
+  assert.equal(await inst.submitForm(form), false)
+  assert.equal(inst.getState().form.edit.error.status, 409)
+  assert.equal(inst.getState().form.edit.errors.form, 'Record changed; reload and retry')
+  assert.equal(await inst.submitForm(form), true)
+  console.log('PASS 82: timeout/conflict preserve values and allow retry')
+}
+
+// ---------- Test 83: rendered-record forms capture bound authoritative fields ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+    <article wf-xano-element="template"><form wf-xano-form="row" wf-xano-form-source="api:update" wf-xano-form-auth="none">
+      <input wf-xano-field="record_id" wf-xano-bind="id"><input wf-xano-field="title" wf-xano-bind="title"><button type="submit">Save</button>
+    </form></article></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let payload
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => url.endsWith('/list') ? makeRes(PAGE([{ id: 9, title: 'Authoritative' }], 1)) : (payload = JSON.parse(opts.body), makeRes({ ok: true }))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] form')))
+  const form = root.querySelector('[wf-xano-item] form')
+  assert.deepEqual(root.__wfXano.getState().form['row:9'].initial, { record_id: '9', title: 'Authoritative' })
+  assert.equal(await root.__wfXano.submitForm(form), true)
+  assert.deepEqual(payload, { record_id: '9', title: 'Authoritative' })
+  console.log('PASS 83: rendered form snapshots authoritative bound values and stable item identity')
+}
+
+// ---------- Test 84: file/method/origin guards reject before writes ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper">
+    <form wf-xano-form="guarded" wf-xano-form-source="api:save" wf-xano-form-method="DELETE">
+      <input wf-xano-field="attachment"><button type="submit">Save</button>
+    </form></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let writes = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('member') }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = () => { writes += 1; return makeRes({ authToken: 'token' }) }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.guarded))
+  const form = root.querySelector('form')
+  await assert.rejects(root.__wfXano.submitForm(form), /Invalid wf-xano form configuration/)
+  form.setAttribute('wf-xano-form-method', 'POST')
+  form.setAttribute('wf-xano-form-source', 'https://outside.example/save')
+  await assert.rejects(root.__wfXano.submitForm(form), /outside xanoBase origin/)
+  form.setAttribute('wf-xano-form-source', 'api:save')
+  form.querySelector('[wf-xano-field]').type = 'file'
+  assert.equal(await root.__wfXano.submitForm(form), false, 'file fields fail safely inside lifecycle')
+  assert.equal(writes, 0)
+  console.log('PASS 84: form file, method, and authenticated-origin guards block writes')
+}
+
+// ---------- Test 85: account switch clears form snapshots and cancels stale submit ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper">
+    <form wf-xano-form="member" wf-xano-form-source="api:save"><input wf-xano-field="bio" value="private bio"><button type="submit">Save</button></form>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let member = 'member-a'
+  let writes = 0
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(member) }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://auth.example', preAuth: false, debug: false }
+  w.fetch = (url) => {
+    if (url.includes('/auth/trade-token')) return makeRes({ authToken: 'token-' + member })
+    writes += 1
+    return makeRes({ ok: true })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.member))
+  const form = root.querySelector('form')
+  assert.equal(await root.__wfXano.submitForm(form), true)
+  form.querySelector('input').value = 'member a value'
+  form.querySelector('input').dispatchEvent(new w.Event('input', { bubbles: true }))
+  member = 'member-b'
+  assert.equal(await root.__wfXano.submitForm(form), false)
+  assert.equal(form.querySelector('input').value, '')
+  assert.equal(JSON.stringify(root.__wfXano.getState()).includes('member a value'), false)
+  assert.equal(writes, 1)
+  console.log('PASS 85: account switch clears member form data and cancels stale submit')
+}
+
+// ---------- Test 86: navigation-away and destroy abort pending forms ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-auth="none">
+    <form wf-xano-form="leave" wf-xano-form-source="api:save" wf-xano-form-auth="none"><input wf-xano-field="title" value="Draft"><button type="submit">Save</button></form>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let aborts = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => { aborts += 1; reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) }))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.leave))
+  const inst = root.__wfXano
+  const first = inst.submitForm(root.querySelector('form'))
+  assert.ok(await waitFor(() => inst.getState().form.leave.status === 'submitting'))
+  w.dispatchEvent(new w.Event('pagehide'))
+  assert.equal(await first, false)
+  assert.equal(inst.getState().form.leave.status, 'idle')
+  const second = inst.submitForm(root.querySelector('form'))
+  assert.ok(await waitFor(() => inst.getState().form.leave.status === 'submitting'))
+  inst.destroy()
+  assert.equal(await second, false)
+  assert.equal(aborts, 2)
+  console.log('PASS 86: navigation-away and destroy abort pending forms without stale terminal state')
+}
+
+// ---------- Test 87: keyed refresh rebases reused rendered-record form snapshot ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+    <article wf-xano-element="template"><form wf-xano-form="row" wf-xano-form-source="api:update" wf-xano-form-auth="none">
+      <input wf-xano-field="record_id" wf-xano-bind="id"><input wf-xano-field="title" wf-xano-bind="title"><button type="submit">Save</button>
+    </form></article></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let title = 'Authoritative'
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 9, title }], 1))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item] form')))
+  const inst = root.__wfXano
+  assert.deepEqual(inst.getState().form['row:9'].initial, { record_id: '9', title: 'Authoritative' })
+  // A refresh where Xano returns a normalized value must rebase the snapshot so
+  // the store, dirty detection, and DOM stay in sync.
+  title = 'Normalized'
+  await inst.refresh()
+  assert.ok(await waitFor(() => inst.getState().form['row:9'].current.title === 'Normalized'))
+  assert.deepEqual(inst.getState().form['row:9'].initial, { record_id: '9', title: 'Normalized' }, 'reused card rebases initial to authoritative value')
+  assert.deepEqual(inst.getState().form['row:9'].dirty, {}, 'rebased form is clean, not spuriously dirty')
+  assert.equal(root.querySelector('[wf-xano-item] input[wf-xano-field="title"]').value, 'Normalized')
+  // An in-flight user edit is preserved and stays dirty across the next refresh.
+  const titleInput = root.querySelector('[wf-xano-item] input[wf-xano-field="title"]')
+  titleInput.value = 'My Draft'
+  titleInput.dispatchEvent(new w.Event('input', { bubbles: true }))
+  assert.deepEqual(inst.getState().form['row:9'].dirty, { title: true })
+  title = 'Server Wins'
+  await inst.refresh()
+  assert.equal(root.querySelector('[wf-xano-item] input[wf-xano-field="title"]').value, 'My Draft', 'in-flight edit survives refresh')
+  assert.deepEqual(inst.getState().form['row:9'].dirty, { title: true }, 'preserved edit stays dirty after resync')
+  console.log('PASS 87: keyed refresh rebases untouched fields and preserves in-flight edits')
+}
+
+// ---------- Test 88: cancelling a mid-submit form re-enables its submit control ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-auth="none">
+    <form wf-xano-form="edit" wf-xano-form-source="api:save" wf-xano-form-auth="none"><input wf-xano-field="title" value="Draft"><button type="submit">Save</button></form>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.edit))
+  const inst = root.__wfXano
+  const form = root.querySelector('form')
+  const button = form.querySelector('button')
+  const submit = inst.submitForm(form)
+  assert.ok(await waitFor(() => inst.getState().form.edit.status === 'submitting'))
+  assert.ok(await waitFor(() => button.disabled))
+  assert.equal(form.classList.contains('is-wf-xano-form-submitting'), true)
+  assert.equal(form.getAttribute('aria-busy'), 'true')
+  // Simulate the account-switch reset path (clearAuthenticatedStoreSnapshots).
+  inst._cancelForms('form:auth-change')
+  inst._clearFormSnapshots('form:auth-change')
+  assert.equal(await submit, false)
+  assert.equal(inst.getState().form.edit.status, 'idle')
+  assert.equal(button.disabled, false, 'submit re-enabled after cancel reprojects form DOM')
+  assert.equal(button.hasAttribute('data-wf-xano-form-disabled'), false)
+  assert.equal(form.classList.contains('is-wf-xano-form-submitting'), false)
+  assert.equal(form.getAttribute('aria-busy'), 'false')
+  console.log('PASS 88: mid-submit form cancel re-enables submit control and clears submitting DOM')
+}
+
+// ---------- Test 89: rendered-record form snapshots are pruned when cards leave the DOM ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+    <article wf-xano-element="template"><form wf-xano-form="row" wf-xano-form-source="api:update" wf-xano-form-auth="none">
+      <input wf-xano-field="record_id" wf-xano-bind="id"><input wf-xano-field="title" wf-xano-bind="title"><button type="submit">Save</button>
+    </form></article></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let items = [{ id: 1, title: 'One' }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(items, items.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item] form').length === 3))
+  const inst = root.__wfXano
+  assert.deepEqual(Object.keys(inst.getState().form).sort(), ['row:1', 'row:2', 'row:3'])
+  // A refresh onto a disjoint id set removes the old cards; their snapshots must go too.
+  items = [{ id: 4, title: 'Four' }, { id: 5, title: 'Five' }]
+  await inst.refresh()
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item] form').length === 2))
+  assert.deepEqual(Object.keys(inst.getState().form).sort(), ['row:4', 'row:5'], 'stale form snapshots for removed cards are pruned')
+  console.log('PASS 89: rendered-record form snapshots are pruned when cards leave the DOM')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

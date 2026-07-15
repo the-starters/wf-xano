@@ -1,6 +1,19 @@
 # Changelog
 
-## v0.22.0 — Unreleased
+## v0.23.0 — Unreleased
+
+- Declarative `wf-xano-form` controllers for form-only wrappers and forms inside rendered records.
+- Allowlisted `wf-xano-field` JSON serialization; text, checkbox/radio groups, and multi-selects
+  project into observable initial/current, dirty/touched, submit, success, and error state.
+- Native client constraints plus allowlisted Xano `errors`/`field_errors` and `message` projections
+  through `wf-xano-error-for`; undeclared response fields and success bodies never enter state.
+- Duplicate-submit suppression, submit-button busy state, reset-to-initial snapshots, named
+  post-success invalidation, timeout/conflict retry, account-switch clearing, and navigation/teardown
+  aborts. File uploads remain intentionally unsupported.
+- Mocked coverage for create/update success, validation, conflict, timeout, retry, logout, duplicate
+  submit, navigation-away, rendered-record forms, and source/minified parity.
+
+## v0.22.0 — 2026-07-15
 
 - Opt-in keyed reconciliation with `wf-xano-reconcile="keyed"` and configurable `wf-xano-key`
   (default `id`). Stable cards update/move in place while removed cards are pruned.
@@ -13,7 +26,7 @@
 - Mocked coverage for stable identity, optimistic success, rollback, authoritative response
   reconciliation, and source/minified parity. No production mutation was run.
 
-## v0.21.0 — Unreleased
+## v0.21.0 — Included in v0.22.0 release
 
 ### Added
 
@@ -31,7 +44,7 @@
 - Dynamic endpoints, GET actions, object payload bindings, and unmarked form fields are rejected;
   Xano remains responsible for member identity, permission, validation, and idempotency.
 
-## v0.20.0 — Unreleased
+## v0.20.0 — Included in v0.22.0 release
 
 ### Added
 
@@ -47,7 +60,7 @@
 - Account switches now reset authenticated lists to page 1 while preserving active filters and
   sort, matching the approved migration behavior.
 
-## v0.19.0 — Unreleased
+## v0.19.0 — Included in v0.22.0 release
 
 ### Added
 
