@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.22.0'
+  var VERSION = '0.23.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1168,9 +1168,12 @@
    *  projection before a fresh token can return another account's data. */
   function clearAuthenticatedStoreSnapshots(requestingInstance) {
     var reload = []
+    var formOnly = []
     ;(instances || []).forEach(function (instance) {
       if (!instance.auth || !instance._state) return
       instance._cancelMutations('action:auth-change')
+      instance._cancelForms('form:auth-change')
+      instance._clearFormSnapshots('form:auth-change')
       // The instance that discovered the change is already in load(). Every
       // other member-scoped list must invalidate an old in-flight response
       // and reload from the newly traded account rather than retaining old
@@ -1179,8 +1182,9 @@
         instance._seq++
         if (instance._fetchAc) instance._fetchAc.abort()
         instance._loading = false
-        reload.push(instance)
+        if (instance.url) reload.push(instance)
       }
+      if (!instance.url) formOnly.push(instance)
       instance._lastResult = null
       instance.page = 1
       if (instance.template) {
@@ -1206,6 +1210,12 @@
     Promise.resolve().then(function () {
       reload.forEach(function (instance) {
         if (instance.ok && instance.root.__wfXano === instance) instance.load()
+      })
+      formOnly.forEach(function (instance) {
+        if (instance.ok && instance.root.__wfXano === instance) {
+          instance.setState('idle')
+          instance._transition({ status: 'success' }, 'auth:form-only-ready')
+        }
       })
     })
   }
@@ -1269,23 +1279,32 @@
     this._destroyed = false
     this._activeMutations = {}
     this._mutationTimers = {}
+    this._activeForms = {}
     this._state = {
       status: 'idle',
       data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
       query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
       local: {},
       mutation: {},
+      form: {},
       error: null,
       revision: 0,
     }
     this._ac = typeof AbortController === 'function' ? new AbortController() : null
     this._fetchAc = null
 
-    if (!this.url) {
+    this.formEls = qa(root, 'form[wf-xano-form]').filter(function (form) { return ownerRoot(form) === root })
+    // A form-only wrapper whose forms all explicitly opt out of auth does not
+    // need an authBase (or member-session lifecycle). Mixed/authenticated
+    // forms continue to inherit the wrapper's auth mode.
+    if (!this.url && this.formEls.length && this.formEls.every(function (form) {
+      return form.getAttribute('wf-xano-form-auth') === 'none'
+    })) this.auth = false
+    if (!this.url && !this.formEls.length) {
       console.error('[wf-xano] missing wf-xano-source on', root)
       return
     }
-    if (!this.template) {
+    if (this.url && !this.template) {
       console.error('[wf-xano] missing template (wf-xano-element="template") inside', root)
       return
     }
@@ -1298,7 +1317,7 @@
       return
     }
     this.ok = true
-    this.template.style.display = 'none'
+    if (this.template) this.template.style.display = 'none'
     root.__wfXano = this
     root.setAttribute('aria-busy', 'false')
     if (this.errorEl) {
@@ -1313,7 +1332,9 @@
       'init',
     )
     this.bindControls()
-    this.load()
+    this._registerForms(this.root)
+    if (this.url) this.load()
+    else this._transition({ status: 'success' }, 'init:form-only')
   }
 
   /** Scoped query: elements inside the root (that don't opt into another
@@ -1350,7 +1371,7 @@
   Instance.prototype._transition = function (patch, reason, replaceSlices) {
     var previous = this._state
     var next = Object.assign({}, previous, patch || {})
-    ;['data', 'query', 'local', 'mutation'].forEach(function (key) {
+    ;['data', 'query', 'local', 'mutation', 'form'].forEach(function (key) {
       if (patch && patch[key]) {
         next[key] = replaceSlices && replaceSlices[key] ? patch[key] : Object.assign({}, previous[key], patch[key])
       }
@@ -1764,6 +1785,329 @@
     this._projectActionControls()
   }
 
+  function formName(form) {
+    var name = String(form.getAttribute('wf-xano-form') || '').trim()
+    return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(name) ? name : null
+  }
+
+  Instance.prototype._ownsForm = function (form) {
+    if (!form || !this.root.contains(form) || ownerRoot(form) !== this.root) return false
+    var template = form.closest ? form.closest(elSel('template')) : null
+    return !template
+  }
+
+  Instance.prototype._formKey = function (form) {
+    var name = formName(form)
+    if (!name) return null
+    var card = form.closest ? form.closest('[wf-xano-item]') : null
+    var id = card && ownerRoot(card) === this.root ? card.getAttribute('data-wf-xano-id') : null
+    return name + (id != null ? ':' + id : '')
+  }
+
+  Instance.prototype._formControls = function (form) {
+    return qa(form, '[wf-xano-field]').filter(function (control) {
+      return ownerRoot(control) === ownerRoot(form) && /^(INPUT|SELECT|TEXTAREA)$/.test(control.tagName)
+    })
+  }
+
+  Instance.prototype._readFormValues = function (form) {
+    var groups = {}
+    this._formControls(form).forEach(function (control) {
+      var field = String(control.getAttribute('wf-xano-field') || '').trim()
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(field)) throw new Error('Invalid wf-xano form field')
+      if (control instanceof HTMLInputElement && control.type === 'file') throw new Error('File fields are not supported')
+      ;(groups[field] = groups[field] || []).push(control)
+    })
+    var values = {}
+    Object.keys(groups).forEach(function (field) {
+      var controls = groups[field]
+      var first = controls[0]
+      if (first instanceof HTMLInputElement && first.type === 'radio') {
+        var chosen = controls.filter(function (control) { return control.checked })[0]
+        values[field] = chosen ? chosen.value : ''
+      } else if (first instanceof HTMLInputElement && first.type === 'checkbox') {
+        if (controls.length === 1) values[field] = !!first.checked
+        else values[field] = controls.filter(function (control) { return control.checked }).map(function (control) { return control.value })
+      } else if (first instanceof HTMLSelectElement && first.multiple) {
+        values[field] = Array.prototype.filter.call(first.options, function (option) { return option.selected }).map(function (option) { return option.value })
+      } else values[field] = first.value
+    })
+    return values
+  }
+
+  Instance.prototype._setFormState = function (key, state, reason) {
+    var forms = Object.assign({}, this._state.form)
+    if (state == null) delete forms[key]
+    else forms[key] = state
+    this._transition({ form: forms }, reason, { form: true })
+    this._projectFormKey(key)
+  }
+
+  Instance.prototype._registerForm = function (form) {
+    if (!this._ownsForm(form) || form.__wfXanoFormKey) return
+    var key = this._formKey(form)
+    if (!key) return
+    var values
+    try { values = this._readFormValues(form) } catch (err) {
+      console.error('[wf-xano] invalid form configuration', err)
+      return
+    }
+    form.__wfXanoFormKey = key
+    this._setFormState(key, {
+      initial: values,
+      current: values,
+      dirty: {},
+      touched: {},
+      status: 'idle',
+      errors: {},
+      error: null,
+    }, 'form:register')
+  }
+
+  Instance.prototype._registerForms = function (scope) {
+    var self = this
+    var forms = []
+    if (scope && scope.matches && scope.matches('form[wf-xano-form]')) forms.push(scope)
+    forms = forms.concat(qa(scope || this.root, 'form[wf-xano-form]'))
+    forms.forEach(function (form) { self._registerForm(form) })
+  }
+
+  Instance.prototype._updateForm = function (form, touchedField) {
+    this._registerForm(form)
+    var key = form.__wfXanoFormKey
+    var prior = key && this._state.form[key]
+    if (!prior) return
+    var current = this._readFormValues(form)
+    var dirty = {}
+    Object.keys(current).forEach(function (field) {
+      if (JSON.stringify(current[field]) !== JSON.stringify(prior.initial[field])) dirty[field] = true
+    })
+    var touched = Object.assign({}, prior.touched)
+    if (touchedField) touched[touchedField] = true
+    var errors = Object.assign({}, prior.errors)
+    if (touchedField) delete errors[touchedField]
+    this._setFormState(key, Object.assign({}, prior, {
+      current: current,
+      dirty: dirty,
+      touched: touched,
+      status: prior.status === 'success' ? 'idle' : prior.status,
+      errors: errors,
+    }), 'form:change')
+  }
+
+  Instance.prototype._projectFormKey = function (key) {
+    var self = this
+    qa(this.root, 'form[wf-xano-form]').filter(function (form) {
+      return self._ownsForm(form) && self._formKey(form) === key
+    }).forEach(function (form) {
+      var state = self._state.form[key]
+      if (!state) return
+      var submitting = state.status === 'submitting'
+      form.classList.toggle('is-wf-xano-form-submitting', submitting)
+      form.classList.toggle('is-wf-xano-form-success', state.status === 'success')
+      form.classList.toggle('is-wf-xano-form-error', state.status === 'error')
+      form.classList.toggle('is-wf-xano-form-dirty', Object.keys(state.dirty).length > 0)
+      form.setAttribute('aria-busy', submitting ? 'true' : 'false')
+      qa(form, '[type="submit"], [wf-xano-element="form-submit"]').forEach(function (control) {
+        if (submitting && 'disabled' in control && !control.disabled) {
+          control.disabled = true
+          control.setAttribute('data-wf-xano-form-disabled', '')
+        } else if (!submitting && control.hasAttribute('data-wf-xano-form-disabled')) {
+          control.disabled = false
+          control.removeAttribute('data-wf-xano-form-disabled')
+        }
+      })
+      qa(form, '[wf-xano-error-for]').forEach(function (el) {
+        var field = el.getAttribute('wf-xano-error-for')
+        var message = state.errors[field] || ''
+        el.textContent = message
+        showStateEl(el, !!message)
+      })
+      self._formControls(form).forEach(function (control) {
+        var field = control.getAttribute('wf-xano-field')
+        if (state.errors[field]) control.setAttribute('aria-invalid', 'true')
+        else control.removeAttribute('aria-invalid')
+      })
+    })
+  }
+
+  Instance.prototype._safeFormErrors = function (form, data, fallback) {
+    var allowed = {}
+    this._formControls(form).forEach(function (control) { allowed[control.getAttribute('wf-xano-field')] = true })
+    var source = data && typeof data === 'object' && (data.errors || data.field_errors)
+    var errors = {}
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      Object.keys(source).forEach(function (field) {
+        var message = source[field]
+        if (allowed[field] && Array.isArray(message)) message = message[0]
+        if (allowed[field] && typeof message === 'string') errors[field] = message.slice(0, 300)
+      })
+    }
+    var formMessage = data && typeof data === 'object' && typeof data.message === 'string' ? data.message : fallback
+    if (formMessage) errors.form = String(formMessage).slice(0, 300)
+    return errors
+  }
+
+  Instance.prototype._writeFormValues = function (form, values) {
+    var groups = {}
+    this._formControls(form).forEach(function (control) {
+      var field = control.getAttribute('wf-xano-field')
+      ;(groups[field] = groups[field] || []).push(control)
+    })
+    Object.keys(groups).forEach(function (field) {
+      var controls = groups[field]
+      var value = values[field]
+      controls.forEach(function (control) {
+        if (control instanceof HTMLInputElement && control.type === 'radio') control.checked = String(control.value) === String(value)
+        else if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+          control.checked = controls.length === 1 ? !!value : Array.isArray(value) && value.map(String).indexOf(String(control.value)) > -1
+        } else if (control instanceof HTMLSelectElement && control.multiple) {
+          var selected = Array.isArray(value) ? value.map(String) : []
+          Array.prototype.forEach.call(control.options, function (option) { option.selected = selected.indexOf(String(option.value)) > -1 })
+        } else control.value = value == null ? '' : value
+      })
+    })
+  }
+
+  Instance.prototype.resetForm = function (form) {
+    if (!this._ownsForm(form)) return false
+    this._registerForm(form)
+    var key = form.__wfXanoFormKey
+    var prior = key && this._state.form[key]
+    if (!prior) return false
+    this._writeFormValues(form, prior.initial)
+    this._setFormState(key, Object.assign({}, prior, {
+      current: prior.initial,
+      dirty: {},
+      touched: {},
+      status: 'idle',
+      errors: {},
+      error: null,
+    }), 'form:reset')
+    return true
+  }
+
+  Instance.prototype._invalidateForm = function (form) {
+    var self = this
+    var spec = String(form.getAttribute('wf-xano-form-invalidate') || '')
+    var targets = []
+    spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
+      instances.forEach(function (instance) {
+        if ((key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
+          if (targets.indexOf(instance) === -1) targets.push(instance)
+        }
+      })
+    })
+    return Promise.all(targets.map(function (instance) {
+      return instance.ok && instance.url && !instance._destroyed ? instance.refresh() : undefined
+    }))
+  }
+
+  Instance.prototype.submitForm = function (form) {
+    if (!this.ok || this._destroyed || !form) return Promise.resolve(false)
+    if (!this._ownsForm(form)) return Promise.reject(new Error('Form does not belong to instance'))
+    this._registerForm(form)
+    var key = form.__wfXanoFormKey
+    var source = form.getAttribute('wf-xano-form-source')
+    var url = resolveUrl(source)
+    var method = String(form.getAttribute('wf-xano-form-method') || 'POST').toUpperCase()
+    if (!key || !url || ['POST', 'PATCH', 'PUT'].indexOf(method) === -1) return Promise.reject(new Error('Invalid wf-xano form configuration'))
+    var formAuth = form.getAttribute('wf-xano-form-auth') !== 'none' && this.auth
+    if (formAuth && /^http:\/\//i.test(url) && CFG.allowInsecureAuth !== true) return Promise.reject(new Error('Refusing authenticated form over insecure HTTP'))
+    if (formAuth) {
+      try {
+        if (new URL(url, window.location.href).origin !== new URL(XANO_HOST, window.location.href).origin) return Promise.reject(new Error('Refusing authenticated form outside xanoBase origin'))
+      } catch (e) { return Promise.reject(new Error('Invalid authenticated form URL')) }
+    }
+    if (this._activeForms[key]) return this._activeForms[key].promise
+    var self = this
+    var controller = typeof AbortController === 'function' ? new AbortController() : null
+    var entry = { controller: controller, promise: null }
+    var promise = Promise.resolve().then(async function () {
+      var timer = null
+      var timedOut = false
+      try {
+        var values = self._readFormValues(form)
+        var prior = self._state.form[key]
+        if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+          var clientErrors = {}
+          self._formControls(form).forEach(function (control) {
+            if (!control.validity.valid) clientErrors[control.getAttribute('wf-xano-field')] = String(control.validationMessage || 'Invalid value').slice(0, 300)
+          })
+          self._setFormState(key, Object.assign({}, prior, { current: values, status: 'error', touched: Object.keys(values).reduce(function (out, field) { out[field] = true; return out }, {}), errors: clientErrors, error: { name: 'ValidationError' } }), 'form:invalid')
+          return false
+        }
+        self._setFormState(key, Object.assign({}, prior, { current: values, status: 'submitting', errors: {}, error: null }), 'form:start')
+        self.emit('formStart', { form: formName(form), key: key })
+        var headers = { 'Content-Type': 'application/json' }
+        if (formAuth) headers.Authorization = 'Bearer ' + (await xanoToken(self))
+        if (controller && controller.signal.aborted) return false
+        var request = { method: method, headers: headers, body: JSON.stringify(values), cache: 'no-store' }
+        if (controller) request.signal = controller.signal
+        var timeout = positiveInt(form.getAttribute('wf-xano-form-timeout'), positiveInt(CFG.formTimeout, 15000))
+        if (controller) timer = window.setTimeout(function () { timedOut = true; controller.abort() }, timeout)
+        var res = await fetch(url, request)
+        if (timer) window.clearTimeout(timer)
+        var data = await res.json().catch(function () { return null })
+        if (controller && controller.signal.aborted && !timedOut) return false
+        if (!res.ok) throw Object.assign(new Error('wf-xano form ' + res.status), { status: res.status, data: data })
+        var resetOnSuccess = form.getAttribute('wf-xano-form-reset-on-success') === 'true'
+        if (resetOnSuccess) self._writeFormValues(form, prior.initial)
+        var accepted = resetOnSuccess ? prior.initial : values
+        self._setFormState(key, Object.assign({}, prior, { initial: accepted, current: accepted, dirty: {}, touched: {}, status: 'success', errors: {}, error: null }), 'form:success')
+        self.emit('formSuccess', { form: formName(form), key: key, status: res.status })
+        await self._invalidateForm(form)
+        return true
+      } catch (err) {
+        if (timer) window.clearTimeout(timer)
+        if (timedOut) err = Object.assign(new Error('Form request timed out'), { name: 'TimeoutError' })
+        if ((controller && controller.signal.aborted && !timedOut) || self._destroyed) return false
+        var state = self._state.form[key]
+        var errors = self._safeFormErrors(form, err.data, timedOut ? 'Request timed out. Please try again.' : 'Unable to submit. Please try again.')
+        self._setFormState(key, Object.assign({}, state, { status: 'error', errors: errors, error: publicError(err) }), 'form:error')
+        self.emit('formError', { form: formName(form), key: key, error: publicError(err) })
+        return false
+      } finally {
+        if (self._activeForms[key] === entry) delete self._activeForms[key]
+      }
+    })
+    entry.promise = promise
+    this._activeForms[key] = entry
+    return promise
+  }
+
+  Instance.prototype._cancelForms = function (reason) {
+    var self = this
+    Object.keys(this._activeForms).forEach(function (key) {
+      var entry = self._activeForms[key]
+      if (entry.controller) entry.controller.abort()
+    })
+    this._activeForms = {}
+    if (!this._destroyed && Object.keys(this._state.form).length) {
+      var forms = {}
+      Object.keys(this._state.form).forEach(function (key) {
+        var state = self._state.form[key]
+        forms[key] = state.status === 'submitting' ? Object.assign({}, state, { status: 'idle', errors: {}, error: null }) : state
+      })
+      this._transition({ form: forms }, reason || 'form:cancel', { form: true })
+    }
+  }
+
+  Instance.prototype._clearFormSnapshots = function (reason) {
+    var self = this
+    var forms = {}
+    Object.keys(this._state.form).forEach(function (key) {
+      var state = self._state.form[key]
+      var blank = {}
+      Object.keys(state.current).forEach(function (field) {
+        blank[field] = Array.isArray(state.current[field]) ? [] : typeof state.current[field] === 'boolean' ? false : ''
+      })
+      forms[key] = Object.assign({}, state, { initial: blank, current: blank, dirty: {}, touched: {}, status: 'idle', errors: {}, error: null })
+      qa(self.root, 'form[wf-xano-form]').filter(function (form) { return self._formKey(form) === key }).forEach(function (form) { self._writeFormValues(form, blank) })
+    })
+    this._transition({ form: forms }, reason || 'form:clear', { form: true })
+  }
+
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
   Instance.prototype.readStaticParams = function () {
     var params = {}
@@ -1896,6 +2240,29 @@
     }).forEach(function (el) {
       el.addEventListener('click', handleAction, signal)
     })
+
+    var handleFormChange = function (e) {
+      var control = e.target && e.target.closest ? e.target.closest('[wf-xano-field]') : null
+      var form = control && control.closest ? control.closest('form[wf-xano-form]') : null
+      if (!form || !self._ownsForm(form)) return
+      self._updateForm(form, e.type === 'change' || e.type === 'focusout' ? control.getAttribute('wf-xano-field') : null)
+    }
+    this.root.addEventListener('input', handleFormChange, signal)
+    this.root.addEventListener('change', handleFormChange, signal)
+    this.root.addEventListener('focusout', handleFormChange, signal)
+    this.root.addEventListener('submit', function (e) {
+      var form = e.target && e.target.matches && e.target.matches('form[wf-xano-form]') ? e.target : null
+      if (!form || !self._ownsForm(form)) return
+      e.preventDefault()
+      self.submitForm(form).catch(function () { /* invalid configuration rejects */ })
+    }, signal)
+    this.root.addEventListener('reset', function (e) {
+      var form = e.target && e.target.matches && e.target.matches('form[wf-xano-form]') ? e.target : null
+      if (!form || !self._ownsForm(form)) return
+      e.preventDefault()
+      self.resetForm(form)
+    }, signal)
+    window.addEventListener('pagehide', function () { self._cancelForms('form:navigate') }, signal)
 
     // Filters: [wf-xano-filter="field"] — re-fetch on change. Checkbox groups
     // for the same field combine into a comma-separated param.
@@ -2349,6 +2716,7 @@
       if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
         list.insertBefore(card, self._infiniteSentinel)
       } else list.appendChild(card)
+      self._registerForms(card)
       appended.push(card)
     })
     // Clamp detection needs layout, so measure a tick after the cards land.
@@ -2436,6 +2804,7 @@
       if (node.parentNode !== list || node.nextSibling !== anchor) list.insertBefore(node, anchor)
       anchor = node
     }
+    ordered.forEach(function (card) { self._registerForms(card) })
     Object.keys(existing).forEach(function (id) { existing[id].remove() })
     if (focused && focused.isConnected && document.activeElement !== focused && typeof focused.focus === 'function') {
       focused.focus()
@@ -2580,6 +2949,7 @@
   /** Tear down: abort listeners, drop rendered items, unregister. */
   Instance.prototype.destroy = function () {
     this._cancelMutations('action:destroy')
+    this._cancelForms('form:destroy')
     this._destroyed = true
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()

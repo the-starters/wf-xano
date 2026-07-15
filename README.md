@@ -99,6 +99,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
   state, duplicate-write suppression, and Xano-authoritative refresh.
 - **React-like where it helps** — v0.22 keyed lists update/move stable cards in place, and explicitly
   reversible actions may apply an optimistic overlay before converging on Xano.
+- **Declarative forms** — v0.23 form controllers expose dirty/touched and submit/error state,
+  serialize only marked fields, project Xano validation, and protect against duplicate submits.
 - **Scriptable** — pre-load callback queue, `results`/`error` events, an async `beforeRender`
   transform hook to filter/augment items before render, and an observable reactive store
   (`getState`/`subscribe`, since v0.19).
@@ -129,8 +131,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.22.0/wf-xano.min.js` | pinned — deterministic (after v0.22.0 is released) |
-| `…/gh/the-starters/wf-xano@0.22/wf-xano.min.js` | latest patch of 0.22 (after release) |
+| `…/gh/the-starters/wf-xano@0.22.0/wf-xano.min.js` | pinned — deterministic released build |
+| `…/gh/the-starters/wf-xano@0.22/wf-xano.min.js` | latest released patch of 0.22 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.

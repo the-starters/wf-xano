@@ -80,8 +80,10 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `getParams()` | Return a copy of all current request parameters. |
 | `clearParams()` | Restore the static `wf-xano-param-*` baseline and reload page 1. |
 | `userParams()` | Return only parameters that differ from the static baseline. |
-| `getState()` | Return a defensive snapshot of status, data, query, local, mutation, safe error metadata, and revision. |
+| `getState()` | Return a defensive snapshot of status, data, query, local, mutation, form, safe error metadata, and revision. |
 | `runAction(control)` | Run one configured `wf-xano-action` control. Duplicate calls for the same action/item share one promise. Resolves `true` after mutation success and declared invalidation, otherwise `false`; invalid configuration rejects. |
+| `submitForm(form)` | Submit one owned `wf-xano-form`. Duplicate calls for the same form key share one promise. Resolves `true` after Xano success and declared invalidation, otherwise `false`; invalid configuration rejects. |
+| `resetForm(form)` | Restore a form to its authoritative registration/last-success snapshot and clear dirty, touched, and error state. Returns whether the form was reset. |
 | `subscribe(handler)` | Subscribe to the complete state; immediately receives the current snapshot. Returns an unsubscribe function. |
 | `subscribe(selector, handler)` | Subscribe to a selected state slice. The handler runs only when the selected value changes by identity. Returns an unsubscribe function. |
 | `audit()` | Return a privacy-safe comparison of rendered stable IDs/query metadata against the store projection. |
@@ -100,6 +102,9 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `actionStart` | `{ action, key, itemId }` | One accepted action entered its pending state. |
 | `actionSuccess` | `{ action, key, itemId, status }` | Xano accepted the mutation. Response bodies and auth data are excluded. |
 | `actionError` | `{ action, key, itemId, error: { name, status? } }` | Mutation failed with safe error metadata; raw messages and response bodies are excluded. |
+| `formStart` | `{ form, key }` | One accepted form entered submitting state. |
+| `formSuccess` | `{ form, key, status }` | Xano accepted the submission. Response bodies and auth data are excluded. |
+| `formError` | `{ form, key, error: { name, status? } }` | Submission failed with safe error metadata; raw messages and response bodies are excluded. |
 
 ```js
 // Example: client-side augmentation before render
@@ -139,6 +144,7 @@ State shape:
   query: { params: {}, page: 1, perPage: 20 },
   local: {},
   mutation: {},
+  form: {},
   error: null | { name: 'Error', status: 500 },
   revision: 0
 }
@@ -184,6 +190,24 @@ a one-field optimistic overlay only when they declare the matching `item:<field>
 Full authoritative item responses reconcile directly; partial responses use the existing
 invalidation path. Public action events remain metadata-only and never expose response bodies. See
 [keyed reconciliation and optimistic actions](attributes.md#keyed-reconciliation-and-optimistic-actions-v022).
+
+### Declarative forms (v0.23)
+
+`submitForm(form)` serializes only controls marked with `wf-xano-field`, performs native browser
+validation, and submits JSON to the authored Xano endpoint. The store exposes a keyed form slice:
+
+```js
+instance.subscribe(
+  function (state) { return state.form.profile },
+  function (form) { console.log(form && form.status, form && form.dirty) }
+)
+```
+
+Standalone form keys use the authored name; forms inside rendered records use `<name>:<item-id>`.
+Successful submitted values become the next clean snapshot unless reset-on-success is enabled.
+Xano field errors are restricted to declared controls. Duplicate submits share one promise, while
+account changes, navigation, and teardown abort active work. See the
+[declarative form attribute contract](attributes.md#declarative-forms-v023).
 
 ### Favorite DOM events
 

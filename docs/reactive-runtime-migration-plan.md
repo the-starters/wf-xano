@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 Owner: The Starters Platform / wf-xano maintainers
-Status: Phase 0–2 merged; Phase 3 implementation in validation
+Status: v0.22.0 released; Phase 5 implementation in validation
 
 ## 📌 TL;DR
 
@@ -23,15 +23,15 @@ Status: Phase 0–2 merged; Phase 3 implementation in validation
 
 | Phase | Status | Owner | Evidence / Link | Notes |
 | --- | --- | --- | --- | --- |
-| Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.18.3 baseline: 54 runtime tests + prompt tests |
+| Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.22.0 released: 79 runtime tests + browser canary |
 | Migration/drift contract defined | ✅ Complete | Codex | This document | Xano authority and projections documented |
-| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–3 implementation authorized |
+| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–5 implementation authorized |
 | Phase 0 compatibility harness | ✅ Complete | wf-xano maintainer | `test/reactive-runtime-parity.test.mjs`, `audit()` | Source/minified parity + local harness established |
-| Phase 1 reactive store foundation | ✅ Complete | wf-xano maintainer | v0.19.0 merged in PR #33 | Store/API landed; no production release yet |
-| Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Read-only attributes landed; no production release yet |
-| Phase 3 generic actions | 🟡 In progress | wf-xano + Xano owner | v0.21.0 branch; tests 66–71 | Pessimistic mocked/test-mode contract only |
-| Phase 4 optimistic mutations/reconciliation | 🟡 Implementation complete | wf-xano + Xano owner | 2026-07-15 | Mocked/unit gates passing; browser canary + review pending |
-| Phase 5 forms | ⬜ Not started | wf-xano + Product |  | Create/edit flows migrate last |
+| Phase 1 reactive store foundation | ✅ Complete | wf-xano maintainer | v0.19.0 merged in PR #33 | Released in v0.22.0 |
+| Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Released in v0.22.0 |
+| Phase 3 generic actions | ✅ Complete | wf-xano + Xano owner | v0.21.0 merged via PR #36; tests 66–71 | Released in v0.22.0 |
+| Phase 4 optimistic mutations/reconciliation | ✅ Complete | wf-xano + Xano owner | PR #36; tests 72–79 + released CDN canary | Released as v0.22.0 on 2026-07-15 |
+| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–86 | Mocked contract only; uploads and consumer cutover excluded |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
 | v1 stability gate | ⬜ Not started | Platform |  | No legacy removal in this plan |
 
@@ -187,6 +187,10 @@ Current development measurements (2026-07-15):
 - v0.22.0 development minified build: 53,780 bytes; provisional v0.22 budget: 54,000 bytes;
   the increase covers keyed reconciliation, exact rollback overlays, and authoritative response
   handling while the cold-load request count remains unchanged;
+- v0.23.0 development minified build: 65,299 bytes; provisional v0.23 budget: 66,000 bytes;
+  the increase covers standalone and rendered-record form controllers, allowlisted field/state
+  projections, lifecycle cancellation, and validation handling. Non-opted-in request count remains
+  unchanged;
 - cold list load: one list request, unchanged; store transitions add no request or render;
 - local harness browser canary passed: legacy/reactive totals both rendered `23`, reactive status
   reached `success`, and loading visibility/class state cleared after the response.
@@ -350,6 +354,11 @@ Exit gate:
   retry, and navigation-away cases pass.
 - No secrets or private capability URLs enter the DOM or URL.
 - The smallest production canary uses safe test data and has explicit side-effect authorization.
+
+Current validation (2026-07-15): tests 80–86 cover the full mocked lifecycle matrix, source/minified
+parity passes, and the exposure scan is clean. The local mocked browser canary passed invalid Xano
+validation, corrected retry/success, authoritative reset, allowlisted payload, and zero console-error
+checks. Production canary and consumer cutover remain separate approval-gated work.
 
 Rollback: restore the previous form script/handler and reload authoritative values from Xano.
 

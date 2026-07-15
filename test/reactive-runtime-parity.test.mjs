@@ -11,6 +11,9 @@ const markup = `<!doctype html><html><body>
     <span wf-xano-state="data.total"></span>
     <span wf-xano-if-state="status === 'success'">ready</span>
     <span wf-xano-class-state="has-results:data.total > 0"></span>
+    <form wf-xano-form="edit" wf-xano-form-source="api:save" wf-xano-form-auth="none">
+      <input wf-xano-field="title" value="Draft"><span wf-xano-error-for="form"></span><button type="submit">Save</button>
+    </form>
     <div wf-xano-template><span wf-xano-bind="title"></span><span wf-xano-bind="status"></span><button wf-xano-action="archive"
       wf-xano-action-source="api:archive" wf-xano-action-param-record_id="item:id"
       wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
@@ -33,15 +36,19 @@ for (const build of builds) {
   const dom = new JSDOM(markup, { runScripts: 'outside-only' })
   const w = dom.window
   let actionCalls = 0
+  let formCalls = 0
   w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
   w.fetch = (url) => {
     if (url.endsWith('/archive')) actionCalls += 1
+    if (url.endsWith('/save')) formCalls += 1
     return Promise.resolve({
     ok: true,
     status: 200,
     json: () => Promise.resolve(url.endsWith('/archive')
       ? { id: 'stable-1', title: 'One', status: 'Archived' }
-      : { items: [{ id: 'stable-1', title: 'One', status: 'Live' }], itemsTotal: 1, curPage: 1, pageTotal: 1 }),
+      : url.endsWith('/save')
+        ? { ok: true }
+        : { items: [{ id: 'stable-1', title: 'One', status: 'Live' }], itemsTotal: 1, curPage: 1, pageTotal: 1 }),
   })
   }
   w.eval(lib)
@@ -58,6 +65,14 @@ for (const build of builds) {
   assert.equal(actionCalls, 1)
   assert.equal(instance.getState().data.items[0].status, 'Archived')
   assert.equal(instance.getState().mutation['archive:stable-1'].status, 'success')
+  const form = list.querySelector('[wf-xano-form]')
+  assert.equal(instance.getState().form.edit.initial.title, 'Draft')
+  form.querySelector('[wf-xano-field]').value = 'Edited'
+  form.querySelector('[wf-xano-field]').dispatchEvent(new w.Event('input', { bubbles: true }))
+  assert.equal(instance.getState().form.edit.dirty.title, true)
+  assert.equal(await instance.submitForm(form), true)
+  assert.equal(formCalls, 1)
+  assert.equal(instance.getState().form.edit.status, 'success')
 }
 
-console.log('PASS reactive runtime: source/minified store + projection + action parity')
+console.log('PASS reactive runtime: source/minified store + projection + action + form parity')

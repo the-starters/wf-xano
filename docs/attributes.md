@@ -144,6 +144,49 @@ Do not enable optimistic mode for payments/entitlements, unrecoverable deletes, 
 non-idempotent multi-record work, or any action without an exact inverse. Xano remains the mutation
 and authorization authority.
 
+### Declarative forms (v0.23)
+
+A wrapper may contain only a form, or a form may live inside a rendered keyed record. Only controls
+marked with `wf-xano-field` enter the JSON payload or reactive snapshot.
+
+```html
+<div wf-xano-element="wrapper" wf-xano-instance="profile-editor">
+  <form wf-xano-form="profile" wf-xano-form-source="member:profile/update"
+    wf-xano-form-method="PATCH" wf-xano-form-invalidate="profile-list">
+    <input wf-xano-field="display_name" required>
+    <span wf-xano-error-for="display_name"></span>
+    <textarea wf-xano-field="bio"></textarea>
+    <span wf-xano-error-for="form"></span>
+    <button type="submit">Save</button>
+  </form>
+</div>
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `wf-xano-form` | ✅ | Stable authored form name. Inside a rendered record, its state key is `<name>:<item-id>`; otherwise it is the name alone. |
+| `wf-xano-form-source` | ✅ | Literal Xano source in the same grammar as `wf-xano-source`. Field values cannot alter it. |
+| `wf-xano-form-method` | — | `POST` (default), `PATCH`, or `PUT`. Other methods are rejected. |
+| `wf-xano-form-auth="none"` | — | Makes an explicitly public form unauthenticated. Forms otherwise inherit their wrapper's auth mode. |
+| `wf-xano-form-timeout` | — | Positive request timeout in milliseconds. Defaults to `WfXanoConfig.formTimeout` or 15,000. |
+| `wf-xano-form-invalidate` | — | Comma-separated instance keys to refresh after success. `self` means the owning list. |
+| `wf-xano-form-reset-on-success="true"` | — | Restore the registration snapshot after success. Otherwise the submitted values become the new clean snapshot. |
+| `wf-xano-field` | ✅ per submitted control | Allowlisted JSON field name on an input, select, or textarea. Checkbox groups and multi-selects become arrays. File inputs are rejected. |
+| `wf-xano-error-for` | — | Projects one declared field error, or use `form` for the safe form-level message. |
+
+Form state is available under `form["<name>[:<item-id>]"]` with `initial`, `current`, `dirty`,
+`touched`, `status`, `errors`, and safe `error` metadata. Forms receive
+`is-wf-xano-form-submitting`, `is-wf-xano-form-success`, `is-wf-xano-form-error`, and
+`is-wf-xano-form-dirty`; pending submit controls are disabled and the form receives
+`aria-busy="true"`. Duplicate submits share one request.
+
+Native constraint errors are projected before a request. Xano may return allowlisted field errors
+as `{ "errors": { "field": "message" } }` or `{ "field_errors": { ... } }`, plus an optional
+top-level `message`. Undeclared response fields and success bodies never enter state or events.
+Account changes clear member form values; navigation, account changes, and `destroy()` abort active
+submits. Xano remains authoritative for identity, permissions, validation, and write idempotency.
+Uploads are intentionally outside this contract.
+
 ### Favorites
 
 Favorites are authenticated, member-scoped controls that work inside cards rendered by either
