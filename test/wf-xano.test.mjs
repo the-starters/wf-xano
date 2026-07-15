@@ -2485,4 +2485,145 @@ const FULL_PAGE1 = {
   console.log('PASS 71: action method and authenticated-origin guards')
 }
 
+// ---------- Test 72: keyed reconciliation preserves node and interactive state ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none"
+      wf-xano-reconcile="keyed" wf-xano-key="uuid">
+      <div wf-xano-template>
+        <span wf-xano-bind="title"></span><input wf-xano-bind="draft">
+        <div class="clamp"><button wf-xano-element="show-more" wf-xano-class="clamp">More</button></div>
+        <div wf-xano-list><span wf-xano-bind="title">nested-owned</span></div>
+      </div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let rows = [
+    { uuid: 'a', title: 'Alpha', draft: 'server-a' },
+    { uuid: 'b', title: 'Beta', draft: 'server-b' },
+  ]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(rows, rows.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list][wf-xano-source]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item]').length === 2))
+  const first = root.querySelector('[data-wf-xano-id="a"]')
+  const input = first.querySelector('input')
+  input.value = 'local draft'
+  input.focus()
+  first.classList.add('is-expanded-local')
+  rows = [
+    { uuid: 'b', title: 'Beta revised', draft: 'server-b-2' },
+    { uuid: 'a', title: 'Alpha revised', draft: 'server-a-2' },
+  ]
+  await root.__wfXano.refresh()
+  const cards = root.querySelectorAll(':scope > [wf-xano-item]')
+  assert.equal(cards[1], first, 'same keyed DOM node is moved, not replaced')
+  assert.equal(first.querySelector('[wf-xano-bind="title"]').textContent, 'Alpha revised')
+  assert.equal(input.value, 'local draft', 'dirty focused input is preserved')
+  assert.equal(w.document.activeElement, input, 'focus is preserved')
+  assert.equal(first.classList.contains('is-expanded-local'), true, 'local expanded state is preserved')
+  assert.equal(first.querySelector('[wf-xano-list]:not([wf-xano-source]) [wf-xano-bind]').textContent, 'nested-owned', 'nested owner is not rebound')
+  assert.deepEqual([...cards].map((card) => card.getAttribute('data-wf-xano-id')), ['b', 'a'])
+  assert.equal(root.__wfXano.audit().ok, true)
+  rows = [{ uuid: 'b', title: 'Duplicate 1' }, { uuid: 'b', title: 'Duplicate 2' }]
+  await root.__wfXano.refresh()
+  assert.equal(root.__wfXano.getState().status, 'error', 'invalid key sets fail closed')
+  assert.deepEqual([...root.querySelectorAll(':scope > [wf-xano-item]')].map((card) => card.getAttribute('data-wf-xano-id')), ['b', 'a'], 'invalid response cannot partially mutate DOM')
+  console.log('PASS 72: keyed reconciliation preserves identity, focus, input, expansion, and nested ownership')
+}
+
+// ---------- Test 73: optimistic partial response refreshes and converges ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-param-record_id="item:id"
+        wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+        wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => {
+    if (url.endsWith('/list')) return makeRes(PAGE([{ id: 1, status: ++listCalls === 1 ? 'Live' : 'Closed' }], 1))
+    return new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) }) })
+  }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  const action = root.__wfXano.runAction(card.querySelector('button'))
+  assert.ok(await waitFor(() => card.querySelector('[wf-xano-bind]').textContent === 'Closed'), 'overlay paints before response')
+  release()
+  assert.equal(await action, true)
+  assert.equal(listCalls, 2, 'partial response invalidates the authoritative list')
+  assert.equal(root.querySelector('[wf-xano-item]'), card, 'authoritative refresh keeps stable node')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 73: optimistic partial response converges through authoritative refresh')
+}
+
+// ---------- Test 74: optimistic failure rolls back exactly ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closed"
+        wf-xano-action-optimistic-rollback="item:status">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? makeRes(PAGE([{ id: 2, status: 'Live' }], 1))
+    : new Promise((resolve) => { release = () => resolve({ ok: false, status: 409, json: () => Promise.resolve({ secret: 'hidden' }) }) })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  const card = root.querySelector('[wf-xano-item]')
+  const action = root.__wfXano.runAction(card.querySelector('button'))
+  assert.ok(await waitFor(() => card.querySelector('[wf-xano-bind]').textContent === 'Closed'))
+  release()
+  assert.equal(await action, false)
+  assert.equal(card.querySelector('[wf-xano-bind]').textContent, 'Live')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Live')
+  assert.equal(root.__wfXano.getState().mutation['close:2'].error.status, 409)
+  console.log('PASS 74: optimistic failure restores the exact pre-mutation snapshot')
+}
+
+// ---------- Test 75: full authoritative response reconciles without self refetch ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-template><span wf-xano-bind="status"></span><button wf-xano-action="close"
+        wf-xano-action-source="api:close" wf-xano-action-optimistic="true"
+        wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Closing"
+        wf-xano-action-optimistic-rollback="item:status" wf-xano-action-response="item">Close</button></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => url.endsWith('/list')
+    ? (listCalls += 1, makeRes(PAGE([{ id: 3, status: 'Live' }], 1)))
+    : makeRes({ id: 3, status: 'Closed' })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.querySelector('[wf-xano-item]')))
+  assert.equal(await root.__wfXano.runAction(root.querySelector('[wf-xano-item] button[wf-xano-action]')), true)
+  assert.equal(listCalls, 1)
+  assert.equal(root.querySelector('[wf-xano-item] [wf-xano-bind]').textContent, 'Closed')
+  assert.equal(root.__wfXano.getState().data.items[0].status, 'Closed')
+  console.log('PASS 75: full authoritative response reconciles without redundant self refresh')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

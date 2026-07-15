@@ -80,7 +80,7 @@
       <p class="meta">Reactive mirror: <span wf-xano-state="data.total" wf-xano-instance="opps">0</span> total · <span wf-xano-state="status" wf-xano-instance="opps">idle</span></p>
       <p class="meta" id="action-canary-status">Action canary: idle</p>
 
-      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5" wf-xano-class-state="is-reactive-loading:status === 'loading'">
+      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5" wf-xano-reconcile="keyed" wf-xano-class-state="is-reactive-loading:status === 'loading'">
         <div class="toolbar">
           <label>Status
             <select wf-xano-filter="status">
@@ -106,7 +106,9 @@
           <a wf-xano-link="id" wf-xano-link-prefix="/opportunities-details---brand-view?opp=">View</a>
           <button class="action" wf-xano-action="archive" wf-xano-action-source="opp30:brand/opportunities/archive-test"
             wf-xano-action-auth="none" wf-xano-action-param-record_id="item:id"
-            wf-xano-action-param-status="literal:Closed" wf-xano-action-idempotency="item:id">
+            wf-xano-action-param-status="literal:Closed" wf-xano-action-idempotency="item:id"
+            wf-xano-action-optimistic="true" wf-xano-action-optimistic-field="status"
+            wf-xano-action-optimistic-value="literal:Closed" wf-xano-action-optimistic-rollback="item:status">
             Archive (mock)
           </button>
         </article>
@@ -130,8 +132,10 @@
         window.WfXano.push(function (wfx) {
           const instance = wfx.get('opps')
           let clicked = false
+          let canaryCard = null
           instance.on('actionStart', function () {
             document.body.dataset.actionCanary = 'pending'
+            document.body.dataset.optimisticPaint = canaryCard && canaryCard.querySelector('.pill-closed').style.display !== 'none' ? 'pass' : 'fail'
             document.querySelector('#action-canary-status').textContent = 'Action canary: pending'
           })
           instance.on('actionSuccess', function () {
@@ -139,10 +143,14 @@
             document.querySelector('#action-canary-status').textContent = 'Action canary: success'
           })
           instance.on('results', function () {
-            if (clicked) return
+            if (clicked) {
+              document.body.dataset.stableNode = document.querySelector('[data-wf-xano-id="100"]') === canaryCard ? 'pass' : 'fail'
+              return
+            }
             const button = document.querySelector('[wf-xano-item] [wf-xano-action="archive"]')
             if (button) {
               clicked = true
+              canaryCard = button.closest('[wf-xano-item]')
               button.click()
             }
           })

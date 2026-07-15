@@ -97,6 +97,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Deep-linkable** — opt-in URL sync keeps page + filters in the query string and restores them.
 - **Mutation-safe** — opt-in v0.21 actions use allowlisted payload bindings, pessimistic busy/error
   state, duplicate-write suppression, and Xano-authoritative refresh.
+- **React-like where it helps** — v0.22 keyed lists update/move stable cards in place, and explicitly
+  reversible actions may apply an optimistic overlay before converging on Xano.
 - **Scriptable** — pre-load callback queue, `results`/`error` events, an async `beforeRender`
   transform hook to filter/augment items before render, and an observable reactive store
   (`getState`/`subscribe`, since v0.19).
@@ -127,8 +129,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.21.0/wf-xano.min.js` | pinned — deterministic (after v0.21.0 is released) |
-| `…/gh/the-starters/wf-xano@0.21/wf-xano.min.js` | latest patch of 0.21 (after release) |
+| `…/gh/the-starters/wf-xano@0.22.0/wf-xano.min.js` | pinned — deterministic (after v0.22.0 is released) |
+| `…/gh/the-starters/wf-xano@0.22/wf-xano.min.js` | latest patch of 0.22 (after release) |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.

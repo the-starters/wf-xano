@@ -109,6 +109,41 @@ record validity, and idempotency server-side; a DOM item ID is never authorizati
 Authenticated actions are restricted to the configured `xanoBase` origin. Public actions may opt
 out with action auth `none`.
 
+### Keyed reconciliation and optimistic actions (v0.22)
+
+Add `wf-xano-reconcile="keyed"` to a wrapper to update, move, insert, and remove cards by stable
+identity instead of replacing every card. `wf-xano-key="uuid"` changes the identity field; the
+default is canonical `id`. Every result must have a unique scalar key. Keyed updates preserve
+focused or user-edited form values, selection, card-local classes/state, and nested instance
+ownership.
+
+Optimistic behavior is action-level opt-in and requires a keyed list plus an exact inverse:
+
+```html
+<button
+  wf-xano-action="close"
+  wf-xano-action-source="opp30:opportunities/close"
+  wf-xano-action-optimistic="true"
+  wf-xano-action-optimistic-field="status"
+  wf-xano-action-optimistic-value="literal:Closed"
+  wf-xano-action-optimistic-rollback="item:status"
+  wf-xano-action-response="item">
+  Close
+</button>
+```
+
+| Attribute | Meaning |
+| --- | --- |
+| `wf-xano-action-optimistic="true"` | Enables the overlay. Omission keeps v0.21 pessimistic behavior. |
+| `wf-xano-action-optimistic-field` | One top-level scalar record field to overlay. |
+| `wf-xano-action-optimistic-value` | Next value using the existing `item:`, `form:`, or `literal:` grammar. |
+| `wf-xano-action-optimistic-rollback` | Must be exactly `item:<optimistic-field>` so the runtime can capture and restore the prior value. |
+| `wf-xano-action-response="item"` | Declares a complete authoritative record response with the same stable key. Otherwise normal invalidation/refetch runs. |
+
+Do not enable optimistic mode for payments/entitlements, unrecoverable deletes, notifications,
+non-idempotent multi-record work, or any action without an exact inverse. Xano remains the mutation
+and authorization authority.
+
 ### Favorites
 
 Favorites are authenticated, member-scoped controls that work inside cards rendered by either

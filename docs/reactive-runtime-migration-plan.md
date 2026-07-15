@@ -30,7 +30,7 @@ Status: Phase 0–2 merged; Phase 3 implementation in validation
 | Phase 1 reactive store foundation | ✅ Complete | wf-xano maintainer | v0.19.0 merged in PR #33 | Store/API landed; no production release yet |
 | Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Read-only attributes landed; no production release yet |
 | Phase 3 generic actions | 🟡 In progress | wf-xano + Xano owner | v0.21.0 branch; tests 66–71 | Pessimistic mocked/test-mode contract only |
-| Phase 4 optimistic mutations/reconciliation | ⬜ Not started | wf-xano + Xano owner |  | Test-mode canary required |
+| Phase 4 optimistic mutations/reconciliation | 🟡 Implementation complete | wf-xano + Xano owner | 2026-07-15 | Mocked/unit gates passing; browser canary + review pending |
 | Phase 5 forms | ⬜ Not started | wf-xano + Product |  | Create/edit flows migrate last |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
 | v1 stability gate | ⬜ Not started | Platform |  | No legacy removal in this plan |
@@ -184,6 +184,9 @@ Current development measurements (2026-07-15):
 - provisional v0.19 budget: no more than 42,000 minified bytes before release;
 - v0.20.0 development minified build: 42,293 bytes; provisional v0.20 budget: 44,000 bytes;
 - v0.21.0 development minified build: 49,478 bytes; provisional v0.21 budget: 50,000 bytes;
+- v0.22.0 development minified build: 53,617 bytes; provisional v0.22 budget: 54,000 bytes;
+  the increase covers keyed reconciliation, exact rollback overlays, and authoritative response
+  handling while the cold-load request count remains unchanged;
 - cold list load: one list request, unchanged; store transitions add no request or render;
 - local harness browser canary passed: legacy/reactive totals both rendered `23`, reactive status
   reached `success`, and loading visibility/class state cleared after the response.

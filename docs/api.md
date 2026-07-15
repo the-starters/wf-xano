@@ -161,7 +161,7 @@ The attributes are opt-in, scoped to their wrapper or `wf-xano-instance`, and up
 batched pass per transition group. Expressions reuse the non-evaluating `wf-xano-if` parser. See
 the [attribute reference](attributes.md#reactive-state-projections) for the complete grammar.
 
-### Pessimistic actions (v0.21)
+### Actions and reconciliation (v0.21–v0.22)
 
 `runAction(control)` and `wf-xano-action` provide an opt-in mutation state machine. Payloads are
 limited to explicitly declared scalar item fields, marked controls in the closest form, and authored
@@ -178,6 +178,12 @@ instance.subscribe(
 Mutation entries contain only `{ status, action, itemId, error }`; no response body or credential is
 stored. Account switches and teardown abort active requests. See the
 [action attribute contract](attributes.md#pessimistic-actions) for payload and invalidation grammar.
+
+In v0.22, wrappers may opt into stable-key DOM reconciliation. Actions on those lists may opt into
+a one-field optimistic overlay only when they declare the matching `item:<field>` rollback source.
+Full authoritative item responses reconcile directly; partial responses use the existing
+invalidation path. Public action events remain metadata-only and never expose response bodies. See
+[keyed reconciliation and optimistic actions](attributes.md#keyed-reconciliation-and-optimistic-actions-v022).
 
 ### Favorite DOM events
 
