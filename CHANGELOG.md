@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.18.3 — 2026-07-15
+
+### Added
+
+- Favorite controls and explicit `wf-xano-element="favorite-visual"` descendants receive
+  `is-active` while saved. `wf-xano-favorite-class` overrides the visual class; unmarked
+  descendants remain unchanged and `is-wf-xano-favorited` stays on the control for compatibility.
+
 ## v0.18.2 — 2026-07-15
 
 ### Fixed

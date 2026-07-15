@@ -150,8 +150,13 @@ Add the same favorite control inside either renderer's card. wf-xano cards expos
 <button type="button" wf-xano-element="favorite" wf-xano-favorite-type="starter"
   wf-xano-favorite-label-add="Save Starter"
   wf-xano-favorite-label-remove="Remove saved Starter">
+  <span wf-xano-element="favorite-visual">…bookmark SVG…</span>
 </button>
 ```
+
+Saved controls and each marked `favorite-visual` descendant receive `is-active`. Override it with
+`wf-xano-favorite-class="custom-active"` on the favorite control. Unmarked descendants are not
+modified, and `is-wf-xano-favorited` remains on the control as the stable library state class.
 
 For a Saved list, return hydrated rows whose `id` is the same canonical identifier used by the
 toggle, then add `wf-xano-refresh-on="favorite"`:

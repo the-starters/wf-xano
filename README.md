@@ -123,7 +123,7 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.18.2/wf-xano.min.js` | pinned — deterministic |
+| `…/gh/the-starters/wf-xano@0.18.3/wf-xano.min.js` | pinned — deterministic |
 | `…/gh/the-starters/wf-xano@0.18/wf-xano.min.js` | latest patch of 0.18 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 

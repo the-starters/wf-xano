@@ -1577,7 +1577,9 @@ const FULL_PAGE1 = {
   const dom = new JSDOM(`<!doctype html><html><body>
     <article data-wf-algolia-hit-objectid="wf-123">
       <button type="button" wf-xano-element="favorite" wf-xano-favorite-type="starter"
-        wf-xano-favorite-label-add="Save Starter" wf-xano-favorite-label-remove="Remove saved Starter"></button>
+        wf-xano-favorite-label-add="Save Starter" wf-xano-favorite-label-remove="Remove saved Starter">
+        <span wf-xano-element="favorite-visual"></span>
+      </button>
     </article>
   </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
   const w = dom.window
@@ -1596,12 +1598,17 @@ const FULL_PAGE1 = {
   }
   w.eval(LIB)
   const button = w.document.querySelector('[wf-xano-element="favorite"]')
+  const visual = w.document.querySelector('[wf-xano-element="favorite-visual"]')
   assert.ok(await waitFor(() => button.classList.contains('is-wf-xano-favorited')), 'initial IDs hydrate Algolia card')
+  assert.equal(button.classList.contains('is-active'), true, 'default active class is applied to the control')
+  assert.equal(visual.classList.contains('is-active'), true, 'default active class is applied to marked visual descendants')
   assert.equal(button.getAttribute('aria-pressed'), 'true')
   assert.equal(button.getAttribute('aria-label'), 'Remove saved Starter')
   button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
   assert.ok(await waitFor(() => calls.some((c) => c.url.endsWith('/toggle'))), 'toggle request sent')
   assert.equal(button.classList.contains('is-wf-xano-favorited'), false, 'authoritative unsaved state applied')
+  assert.equal(button.classList.contains('is-active'), false, 'default active class is removed from the control')
+  assert.equal(visual.classList.contains('is-active'), false, 'default active class is removed from marked visual descendants')
   const toggle = calls.find((c) => c.url.endsWith('/toggle'))
   assert.deepEqual(JSON.parse(toggle.opts.body), { item_type: 'starter', item_id: 'wf-123' })
   assert.equal(toggle.opts.headers.Authorization, 'Bearer xano-brand')
@@ -1825,6 +1832,36 @@ const FULL_PAGE1 = {
   assert.equal(cardClicks, 0, 'favorite click does not trigger the surrounding card navigation handler')
   assert.equal(button.getAttribute('aria-pressed'), 'true', 'authoritative saved state applied')
   console.log('PASS 53: document capture favorite listener precedes card interception')
+}
+
+// ---------- Test 54: favorite visual active class can be overridden ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <article data-wf-algolia-hit-objectid="wf-visual">
+      <button wf-xano-element="favorite" wf-xano-favorite-type="starter" wf-xano-favorite-class="custom-active">
+        <svg wf-xano-element="favorite-visual"><path></path></svg>
+        <span wf-xano-element="favorite-visual"></span>
+        <span class="unmarked"></span>
+      </button>
+    </article>
+  </body></html>`, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', authBase: 'https://x.example/api:auth', tradeTokenPath: '/trade', favoritesSource: 'opp30:brand/favorites', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('jwt') }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'xano' })
+    if (url.endsWith('/ids')) return makeRes({ ids: ['wf-visual'] })
+    throw new Error('unexpected URL ' + url)
+  }
+  w.eval(LIB)
+  const button = w.document.querySelector('[wf-xano-element="favorite"]')
+  const visuals = [...w.document.querySelectorAll('[wf-xano-element="favorite-visual"]')]
+  assert.ok(await waitFor(() => button.classList.contains('custom-active')), 'configured class hydrates on the control')
+  assert.ok(visuals.every((el) => el.classList.contains('custom-active')), 'configured class hydrates on every marked visual')
+  assert.equal(button.classList.contains('is-active'), false, 'configured class replaces the default visual class')
+  assert.equal(w.document.querySelector('.unmarked').classList.contains('custom-active'), false, 'unmarked descendants are unchanged')
+  assert.equal(button.classList.contains('is-wf-xano-favorited'), true, 'internal compatibility class remains')
+  console.log('PASS 54: configurable favorite active class targets marked visuals only')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
