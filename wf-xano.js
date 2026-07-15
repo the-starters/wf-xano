@@ -1902,7 +1902,12 @@
     var key = form.__wfXanoFormKey
     var prior = key && this._state.form[key]
     if (!prior) return
-    var current = this._readFormValues(form)
+    var current
+    // Designer/page scripts may mutate a registered form after boot. Treat a
+    // newly invalid field name or unsupported file input as configuration
+    // drift and leave the last valid snapshot intact instead of throwing from
+    // the delegated input/change/focusout listener.
+    try { current = this._readFormValues(form) } catch (err) { return }
     var dirty = {}
     Object.keys(current).forEach(function (field) {
       if (JSON.stringify(current[field]) !== JSON.stringify(prior.initial[field])) dirty[field] = true

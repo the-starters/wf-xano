@@ -10,6 +10,8 @@
 - Duplicate-submit suppression, submit-button busy state, reset-to-initial snapshots, named
   post-success invalidation, timeout/conflict retry, account-switch clearing, and navigation/teardown
   aborts. File uploads remain intentionally unsupported.
+- Late Designer/page-script mutations to invalid field names or file inputs now fail safely inside
+  delegated change listeners without corrupting the last valid snapshot or sending a write.
 - Mocked coverage for create/update success, validation, conflict, timeout, retry, logout, duplicate
   submit, navigation-away, rendered-record forms, and source/minified parity.
 

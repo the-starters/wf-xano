@@ -31,7 +31,7 @@ Status: v0.22.0 released; Phase 5 implementation in validation
 | Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Released in v0.22.0 |
 | Phase 3 generic actions | ✅ Complete | wf-xano + Xano owner | v0.21.0 merged via PR #36; tests 66–71 | Released in v0.22.0 |
 | Phase 4 optimistic mutations/reconciliation | ✅ Complete | wf-xano + Xano owner | PR #36; tests 72–79 + released CDN canary | Released as v0.22.0 on 2026-07-15 |
-| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–89 | Mocked contract only; uploads and consumer cutover excluded |
+| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–90 | Mocked contract only; uploads and consumer cutover excluded |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
 | v1 stability gate | ⬜ Not started | Platform |  | No legacy removal in this plan |
 
@@ -187,7 +187,7 @@ Current development measurements (2026-07-15):
 - v0.22.0 development minified build: 53,780 bytes; provisional v0.22 budget: 54,000 bytes;
   the increase covers keyed reconciliation, exact rollback overlays, and authoritative response
   handling while the cold-load request count remains unchanged;
-- v0.23.0 development minified build: 66,422 bytes; provisional v0.23 budget: 67,000 bytes;
+- v0.23.0 development minified build: 66,448 bytes; provisional v0.23 budget: 67,000 bytes;
   the increase covers standalone and rendered-record form controllers, allowlisted field/state
   projections, lifecycle cancellation, validation handling, and pruning of form snapshots whose
   cards leave the DOM. Non-opted-in request count remains unchanged;
@@ -355,7 +355,7 @@ Exit gate:
 - No secrets or private capability URLs enter the DOM or URL.
 - The smallest production canary uses safe test data and has explicit side-effect authorization.
 
-Current validation (2026-07-15): tests 80–89 cover the full mocked lifecycle matrix, source/minified
+Current validation (2026-07-15): tests 80–90 cover the full mocked lifecycle matrix, source/minified
 parity passes, and the exposure scan is clean. The local mocked browser canary passed invalid Xano
 validation, corrected retry/success, authoritative reset, allowlisted payload, and zero console-error
 checks. Production canary and consumer cutover remain separate approval-gated work.
