@@ -1145,10 +1145,9 @@
     ;(instances || []).forEach(function (instance) {
       if (!instance.auth || !instance._state) return
       instance._lastResult = null
-      instance._transition(
-        { data: { items: [], total: 0, page: 1, pages: 1, hasMore: false }, error: null },
-        'auth:change',
-      )
+      var patch = { data: { items: [], total: 0, page: 1, pages: 1, hasMore: false }, error: null }
+      if (!instance._loading) patch.status = 'idle'
+      instance._transition(patch, 'auth:change')
     })
   }
 

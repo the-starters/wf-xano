@@ -2007,4 +2007,42 @@ const FULL_PAGE1 = {
   console.log('PASS 59: account-switch store isolation')
 }
 
+// ---------- Test 60: account switch resets a non-reloading instance's store to idle ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="opp30:a/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="opp30:b/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a-jwt'
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.fetch = (url) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'token-for-' + session })
+    if (/a\/list/.test(url)) return makeRes(PAGE([{ id: 'a-' + session, title: 'A' }], 1))
+    return makeRes(PAGE([{ id: 'b-' + session, title: 'B' }], 1))
+  }
+  w.eval(LIB)
+  const lists = w.document.querySelectorAll('[wf-xano-list]')
+  assert.ok(await waitFor(() => lists[0].__wfXano && lists[1].__wfXano))
+  const instA = lists[0].__wfXano
+  const instB = lists[1].__wfXano
+  assert.ok(await waitFor(() => instA.getState().status === 'success' && instB.getState().status === 'success'))
+  assert.equal(instA.getState().data.items[0].id, 'a-member-a-jwt')
+  // Only instance B refreshes after the account switch; A never re-fetches.
+  session = 'member-b-jwt'
+  await instB.refresh()
+  const a = instA.getState()
+  assert.equal(a.status, 'idle', 'non-reloading instance returns to idle, not a phantom empty success')
+  assert.deepEqual(a.data.items, [], 'non-reloading instance snapshot is emptied of prior member data')
+  assert.equal(instB.getState().data.items[0].id, 'b-member-b-jwt', 'reloading instance refills with new member data')
+  console.log('PASS 60: account switch resets a non-reloading instance to idle')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
