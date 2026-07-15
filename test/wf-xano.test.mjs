@@ -3066,4 +3066,28 @@ const FULL_PAGE1 = {
   console.log('PASS 88: mid-submit form cancel re-enables submit control and clears submitting DOM')
 }
 
+// ---------- Test 89: rendered-record form snapshots are pruned when cards leave the DOM ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-source="api:list" wf-xano-auth="none" wf-xano-reconcile="keyed">
+    <article wf-xano-element="template"><form wf-xano-form="row" wf-xano-form-source="api:update" wf-xano-form-auth="none">
+      <input wf-xano-field="record_id" wf-xano-bind="id"><input wf-xano-field="title" wf-xano-bind="title"><button type="submit">Save</button>
+    </form></article></div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let items = [{ id: 1, title: 'One' }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }]
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE(items, items.length))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item] form').length === 3))
+  const inst = root.__wfXano
+  assert.deepEqual(Object.keys(inst.getState().form).sort(), ['row:1', 'row:2', 'row:3'])
+  // A refresh onto a disjoint id set removes the old cards; their snapshots must go too.
+  items = [{ id: 4, title: 'Four' }, { id: 5, title: 'Five' }]
+  await inst.refresh()
+  assert.ok(await waitFor(() => root.querySelectorAll('[wf-xano-item] form').length === 2))
+  assert.deepEqual(Object.keys(inst.getState().form).sort(), ['row:4', 'row:5'], 'stale form snapshots for removed cards are pruned')
+  console.log('PASS 89: rendered-record form snapshots are pruned when cards leave the DOM')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

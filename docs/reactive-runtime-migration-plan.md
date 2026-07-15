@@ -187,10 +187,10 @@ Current development measurements (2026-07-15):
 - v0.22.0 development minified build: 53,780 bytes; provisional v0.22 budget: 54,000 bytes;
   the increase covers keyed reconciliation, exact rollback overlays, and authoritative response
   handling while the cold-load request count remains unchanged;
-- v0.23.0 development minified build: 65,299 bytes; provisional v0.23 budget: 66,000 bytes;
+- v0.23.0 development minified build: 66,422 bytes; provisional v0.23 budget: 67,000 bytes;
   the increase covers standalone and rendered-record form controllers, allowlisted field/state
-  projections, lifecycle cancellation, and validation handling. Non-opted-in request count remains
-  unchanged;
+  projections, lifecycle cancellation, validation handling, and pruning of form snapshots whose
+  cards leave the DOM. Non-opted-in request count remains unchanged;
 - cold list load: one list request, unchanged; store transitions add no request or render;
 - local harness browser canary passed: legacy/reactive totals both rendered `23`, reactive status
   reached `success`, and loading visibility/class state cleared after the response.

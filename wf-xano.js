@@ -2135,6 +2135,28 @@
     Object.keys(forms).forEach(function (key) { self._projectFormKey(key) })
   }
 
+  /** Drop form snapshots whose card has left the DOM so `_state.form` (and the
+   *  per-transition clone cost it drives) stays bounded as lists churn. Keys with
+   *  an in-flight submit are kept until that submit settles. */
+  Instance.prototype._pruneForms = function () {
+    var self = this
+    var keys = Object.keys(this._state.form)
+    if (!keys.length) return
+    var present = {}
+    qa(this.root, 'form[wf-xano-form]').forEach(function (form) {
+      if (!self._ownsForm(form)) return
+      var key = self._formKey(form)
+      if (key) present[key] = true
+    })
+    var forms = null
+    keys.forEach(function (key) {
+      if (present[key] || self._activeForms[key]) return
+      if (!forms) forms = Object.assign({}, self._state.form)
+      delete forms[key]
+    })
+    if (forms) this._transition({ form: forms }, 'form:prune', { form: true })
+  }
+
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
   Instance.prototype.readStaticParams = function () {
     var params = {}
@@ -2775,6 +2797,7 @@
     if (this.appendMode) this.updateLoadMore(result)
     else this.renderPagination(result)
     this.updateFilterUI()
+    this._pruneForms()
   }
 
   Instance.prototype._renderItemsKeyed = function (items, list) {
