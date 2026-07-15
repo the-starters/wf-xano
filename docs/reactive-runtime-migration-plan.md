@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 Owner: The Starters Platform / wf-xano maintainers
-Status: v0.22.0 released; Phase 5 implementation in validation
+Status: v0.23.0 released; Phase 6 consumer rollout not started
 
 ## 📌 TL;DR
 
@@ -23,7 +23,7 @@ Status: v0.22.0 released; Phase 5 implementation in validation
 
 | Phase | Status | Owner | Evidence / Link | Notes |
 | --- | --- | --- | --- | --- |
-| Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.22.0 released: 79 runtime tests + browser canary |
+| Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.23.0 released: 90 runtime tests + mocked browser canary |
 | Migration/drift contract defined | ✅ Complete | Codex | This document | Xano authority and projections documented |
 | Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–5 implementation authorized |
 | Phase 0 compatibility harness | ✅ Complete | wf-xano maintainer | `test/reactive-runtime-parity.test.mjs`, `audit()` | Source/minified parity + local harness established |
@@ -31,7 +31,7 @@ Status: v0.22.0 released; Phase 5 implementation in validation
 | Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Released in v0.22.0 |
 | Phase 3 generic actions | ✅ Complete | wf-xano + Xano owner | v0.21.0 merged via PR #36; tests 66–71 | Released in v0.22.0 |
 | Phase 4 optimistic mutations/reconciliation | ✅ Complete | wf-xano + Xano owner | PR #36; tests 72–79 + released CDN canary | Released as v0.22.0 on 2026-07-15 |
-| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–90 | Mocked contract only; uploads and consumer cutover excluded |
+| Phase 5 forms | ✅ Complete | wf-xano + Product | PRs #37–38; tests 80–90 | Released as v0.23.0 on 2026-07-15; uploads and consumer cutover excluded |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
 | v1 stability gate | ⬜ Not started | Platform |  | No legacy removal in this plan |
 
