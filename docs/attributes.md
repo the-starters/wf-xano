@@ -67,7 +67,7 @@ wf-xano or wf-algolia. Configure `WfXanoConfig.favoritesSource` once, then use:
   wf-xano-favorite-type="starter"
   wf-xano-favorite-label-add="Save Starter"
   wf-xano-favorite-label-remove="Remove saved Starter">
-  Save
+  <span wf-xano-element="favorite-visual">Save</span>
 </button>
 ```
 
@@ -78,8 +78,13 @@ wf-xano or wf-algolia. Configure `WfXanoConfig.favoritesSource` once, then use:
 | `wf-xano-favorite-id` | — | Explicit item ID. Otherwise resolves from the closest `data-wf-xano-id`, then wf-algolia's `data-wf-algolia-hit-objectid`. |
 | `wf-xano-favorite-label-add` | — | Accessible label while unsaved. Defaults to `Save item`. |
 | `wf-xano-favorite-label-remove` | — | Accessible label while saved. Defaults to `Remove saved item`. |
+| `wf-xano-favorite-class` | — | Active class applied to the control and marked visuals. Defaults to `is-active`. |
+| `wf-xano-element="favorite-visual"` | — | Marks a descendant that receives the favorite control's active class. Multiple descendants are supported; unmarked descendants are unchanged. |
 
-The control gets `is-wf-xano-favorited`, `is-wf-xano-loading`, `aria-pressed`, and `aria-busy`.
+When saved, the control and every marked `favorite-visual` descendant get `is-active` by default.
+Set `wf-xano-favorite-class="custom-active"` on the control to override that visual class. The
+control also keeps the stable internal `is-wf-xano-favorited` class for compatibility. It gets
+`is-wf-xano-loading`, `aria-pressed`, and `aria-busy` as before.
 Toggles are optimistic and roll back on failure; every visible copy of the same type/ID stays in
 sync. An authenticated IDs request hydrates state after reload and whenever another renderer adds
 cards. A wrapper with `wf-xano-refresh-on="favorite"` automatically refreshes after a successful

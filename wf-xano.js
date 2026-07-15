@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.18.2'
+  var VERSION = '0.18.3'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -503,9 +503,24 @@
     el.setAttribute('aria-pressed', favorited ? 'true' : 'false')
   }
 
+  function favoriteActiveClasses(el) {
+    var value = String(el.getAttribute('wf-xano-favorite-class') || '').trim() || 'is-active'
+    return value.split(/\s+/).filter(Boolean)
+  }
+
+  function setFavoriteActiveClasses(el, favorited) {
+    var targets = [el].concat(qa(el, '[wf-xano-element="favorite-visual"]'))
+    favoriteActiveClasses(el).forEach(function (className) {
+      targets.forEach(function (target) {
+        target.classList.toggle(className, !!favorited)
+      })
+    })
+  }
+
   function setFavoriteControl(el, favorited, loading) {
     el.hidden = false
     el.classList.toggle('is-wf-xano-favorited', !!favorited)
+    setFavoriteActiveClasses(el, favorited)
     el.classList.toggle('is-wf-xano-loading', !!loading)
     el.setAttribute('aria-busy', loading ? 'true' : 'false')
     if ('disabled' in el) el.disabled = !!loading
