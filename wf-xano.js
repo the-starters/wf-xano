@@ -1324,7 +1324,13 @@
       selector = function (state) { return state }
     }
     if (typeof selector !== 'function' || typeof handler !== 'function') return function () {}
-    var sub = { selector: selector, handler: handler, last: selector(this._state) }
+    var sub = { selector: selector, handler: handler, last: undefined }
+    try {
+      sub.last = selector(this._state)
+    } catch (e) {
+      /* selector error — non-fatal */
+      return function () {}
+    }
     this._subscribers.push(sub)
     try {
       handler(cloneStateValue(sub.last), undefined)
