@@ -131,8 +131,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.22.0/wf-xano.min.js` | pinned — deterministic released build |
-| `…/gh/the-starters/wf-xano@0.22/wf-xano.min.js` | latest released patch of 0.22 |
+| `…/gh/the-starters/wf-xano@0.23.0/wf-xano.min.js` | pinned — deterministic released build |
+| `…/gh/the-starters/wf-xano@0.23/wf-xano.min.js` | latest released patch of 0.23 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.
