@@ -173,6 +173,7 @@ marked with `wf-xano-field` enter the JSON payload or reactive snapshot.
 | `wf-xano-form-reset-on-success="true"` | — | Restore the registration snapshot after success. Otherwise the submitted values become the new clean snapshot. |
 | `wf-xano-field` | ✅ per submitted control | Allowlisted JSON field name on an input, select, or textarea. Checkbox groups and multi-selects become arrays. File inputs are rejected. |
 | `wf-xano-error-for` | — | Projects one declared field error, or use `form` for the safe form-level message. |
+| `wf-xano-element="form-submit"` | — | Marks a non-native submit control (e.g. a Webflow div/link button) so it is disabled while the submit is in flight, alongside any native `[type="submit"]`. |
 
 Form state is available under `form["<name>[:<item-id>]"]` with `initial`, `current`, `dirty`,
 `touched`, `status`, `errors`, and safe `error` metadata. Forms receive

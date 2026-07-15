@@ -31,7 +31,7 @@ Status: v0.22.0 released; Phase 5 implementation in validation
 | Phase 2 reactive DOM projections | ✅ Complete | wf-xano maintainer | v0.20.0 merged in PR #34; tests 62–65 | Released in v0.22.0 |
 | Phase 3 generic actions | ✅ Complete | wf-xano + Xano owner | v0.21.0 merged via PR #36; tests 66–71 | Released in v0.22.0 |
 | Phase 4 optimistic mutations/reconciliation | ✅ Complete | wf-xano + Xano owner | PR #36; tests 72–79 + released CDN canary | Released as v0.22.0 on 2026-07-15 |
-| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–86 | Mocked contract only; uploads and consumer cutover excluded |
+| Phase 5 forms | 🟡 In progress | wf-xano + Product | v0.23.0 branch; tests 80–89 | Mocked contract only; uploads and consumer cutover excluded |
 | Phase 6 consumer rollout | ⬜ Not started | Product + Platform |  | One page/capability per cutover |
 | v1 stability gate | ⬜ Not started | Platform |  | No legacy removal in this plan |
 
@@ -355,7 +355,7 @@ Exit gate:
 - No secrets or private capability URLs enter the DOM or URL.
 - The smallest production canary uses safe test data and has explicit side-effect authorization.
 
-Current validation (2026-07-15): tests 80–86 cover the full mocked lifecycle matrix, source/minified
+Current validation (2026-07-15): tests 80–89 cover the full mocked lifecycle matrix, source/minified
 parity passes, and the exposure scan is clean. The local mocked browser canary passed invalid Xano
 validation, corrected retry/success, authoritative reset, allowlisted payload, and zero console-error
 checks. Production canary and consumer cutover remain separate approval-gated work.
