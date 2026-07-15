@@ -25,10 +25,10 @@ Status: Phase 0–1 implemented locally; validation in progress
 | --- | --- | --- | --- | --- |
 | Current runtime audited | ✅ Complete | Codex | `wf-xano.js`, `docs/api.md`, tests | v0.18.3 baseline: 54 runtime tests + prompt tests |
 | Migration/drift contract defined | ✅ Complete | Codex | This document | Xano authority and projections documented |
-| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Initial Phase 0–1 slice only |
-| Phase 0 compatibility harness | 🟡 In progress | wf-xano maintainer | `test/reactive-runtime-parity.test.mjs`, `audit()` | 59 runtime tests + source/minified parity pass; browser canary remains |
-| Phase 1 reactive store foundation | 🟡 In progress | wf-xano maintainer | v0.19.0 feature branch + API tests | Store/API implemented; review and stabilization remain |
-| Phase 2 reactive DOM projections | ⬜ Not started | wf-xano maintainer |  | Read-only opt-in |
+| Plan approved | ✅ Complete | Product + Platform | User authorization in Codex task | Phase 0–2 implementation authorized |
+| Phase 0 compatibility harness | ✅ Complete | wf-xano maintainer | `test/reactive-runtime-parity.test.mjs`, `audit()` | Source/minified parity + local harness established |
+| Phase 1 reactive store foundation | ✅ Complete | wf-xano maintainer | v0.19.0 merged in PR #33 | Store/API landed; no production release yet |
+| Phase 2 reactive DOM projections | 🟡 In progress | wf-xano maintainer | v0.20.0 branch; tests 62–65 | Read-only attributes implemented; gate/browser checks remain |
 | Phase 3 generic actions | ⬜ Not started | wf-xano + Xano owner |  | Pessimistic mutations first |
 | Phase 4 optimistic mutations/reconciliation | ⬜ Not started | wf-xano + Xano owner |  | Test-mode canary required |
 | Phase 5 forms | ⬜ Not started | wf-xano + Product |  | Create/edit flows migrate last |
@@ -182,8 +182,10 @@ Current development measurements (2026-07-15):
 - v0.18.3 minified baseline: 36,554 bytes;
 - v0.19.0 development minified build: 40,437 bytes (+3,883 bytes / 10.6%);
 - provisional v0.19 budget: no more than 42,000 minified bytes before release;
+- v0.20.0 development minified build: 42,293 bytes; provisional v0.20 budget: 44,000 bytes;
 - cold list load: one list request, unchanged; store transitions add no request or render;
-- local harness asset served successfully on port 8768; an interactive browser canary remains open.
+- local harness browser canary passed: legacy/reactive totals both rendered `23`, reactive status
+  reached `success`, and loading visibility/class state cleared after the response.
 
 ### Phase 1 — Invisible reactive store foundation
 

@@ -143,6 +143,20 @@ State shape:
 The state error intentionally excludes server response bodies, authentication values, and raw error
 messages. The existing `error` event still receives the original `Error` for compatibility.
 
+### Read-only DOM projections (v0.20)
+
+State can be projected into Webflow-authored elements without page-specific JavaScript:
+
+```html
+<span wf-xano-state="data.total" wf-xano-prefix="Total: ">0</span>
+<div wf-xano-if-state="status === 'loading'">Loading…</div>
+<section wf-xano-class-state="has-results:data.total > 0"></section>
+```
+
+The attributes are opt-in, scoped to their wrapper or `wf-xano-instance`, and updated in one
+batched pass per transition group. Expressions reuse the non-evaluating `wf-xano-if` parser. See
+the [attribute reference](attributes.md#reactive-state-projections) for the complete grammar.
+
 ### Favorite DOM events
 
 The module dispatches document-level `CustomEvent`s so page analytics or UI code can react without

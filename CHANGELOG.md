@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.20.0 — Unreleased
+
+### Added
+
+- Opt-in read-only `wf-xano-state`, `wf-xano-if-state`, and `wf-xano-class-state` projections,
+  scoped to their wrapper or explicit instance key and batched once per transition group.
+- Safe state conditions reuse the existing comparison grammar; class directives accept only a
+  single CSS identifier plus an allowlisted expression. Hidden conditional projections maintain
+  `aria-hidden`.
+- A mocked-harness canary and source/minified parity coverage for the projection runtime.
+
+### Fixed
+
+- Account switches now reset authenticated lists to page 1 while preserving active filters and
+  sort, matching the approved migration behavior.
+
 ## v0.19.0 — Unreleased
 
 ### Added

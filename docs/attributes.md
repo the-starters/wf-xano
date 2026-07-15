@@ -55,6 +55,21 @@ These work on any descendant of the template **and on the template root itself**
 | `wf-xano-element="total"` | Total item count from the server. |
 | `wf-xano-element="count-from"` / `="count-to"` | Visible range — "Showing **9**–**12** of 45". |
 
+### Reactive state projections
+
+These v0.20 attributes are opt-in, read-only projections of the instance store. They never send a
+request or change Xano data. Place them inside the owning wrapper, or anywhere on the page with the
+matching `wf-xano-instance` key.
+
+| Attribute | Value | Description |
+| --- | --- | --- |
+| `wf-xano-state` | store path | Writes a scalar state value as text, e.g. `data.total`, `status`, or `query.page`. Objects and arrays render blank rather than exposing record bodies. Supports `wf-xano-format`, `wf-xano-default`, `wf-xano-prefix`, and `wf-xano-suffix`. |
+| `wf-xano-if-state` | safe expression | Shows the element when the expression matches the store and hides it otherwise, e.g. `status === 'loading'`, `data.total > 0`, or `error.status === 503`. Uses the same allowlisted comparison/AND/OR grammar as `wf-xano-if`; no JavaScript is evaluated. Hidden elements receive `aria-hidden="true"`. `wf-xano-display` controls the shown display value. |
+| `wf-xano-class-state` | `class:expression` | Toggles one safe CSS class from state, e.g. `is-loading:status === 'loading'`. Separate multiple directives with semicolons. Class names must be a single CSS identifier; selectors, whitespace, and arbitrary code are ignored. |
+
+Projection updates are batched into one microtask pass per synchronous transition group. Existing
+`total`, `loader`, `empty`, `error`, and item `wf-xano-if` roles remain supported unchanged.
+
 ### Favorites
 
 Favorites are authenticated, member-scoped controls that work inside cards rendered by either

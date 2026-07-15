@@ -65,8 +65,9 @@
       <!-- Header lives OUTSIDE the list wrapper via the instance key -->
       <h1>My opportunities <small>(<span wf-xano-element="total" wf-xano-instance="opps">0</span>)</small></h1>
       <p class="meta">Showing <span wf-xano-element="count-from" wf-xano-instance="opps">0</span>–<span wf-xano-element="count-to" wf-xano-instance="opps">0</span> of <span wf-xano-element="total" wf-xano-instance="opps">0</span></p>
+      <p class="meta">Reactive mirror: <span wf-xano-state="data.total" wf-xano-instance="opps">0</span> total · <span wf-xano-state="status" wf-xano-instance="opps">idle</span></p>
 
-      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5">
+      <div wf-xano-element="wrapper" wf-xano-instance="opps" wf-xano-url-sync="true" wf-xano-source="opp30:brand/opportunities/list" wf-xano-auth="none" wf-xano-per-page="8" wf-xano-page-window="5" wf-xano-class-state="is-reactive-loading:status === 'loading'">
         <div class="toolbar">
           <label>Status
             <select wf-xano-filter="status">
@@ -93,6 +94,7 @@
 
         <div class="state" wf-xano-element="empty" style="display:none">No opportunities yet.</div>
         <div class="state" wf-xano-element="loader">Loading…</div>
+        <div class="state" wf-xano-if-state="status === 'loading'">Reactive store is loading…</div>
         <div class="state" wf-xano-element="error" style="display:none">Something went wrong.</div>
 
         <div class="pager">

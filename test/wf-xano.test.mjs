@@ -2050,7 +2050,7 @@ const FULL_PAGE1 = {
   console.log('PASS 60: account switch clears and reloads every authenticated instance')
 }
 
-// ---------- Test 61: account switch resets page/filters to baseline before reload ----------
+// ---------- Test 61: account switch resets page but preserves active filters ----------
 {
   const MARKUP = `<!doctype html><html><body>
     <div wf-xano-list wf-xano-instance="a" wf-xano-source="opp30:a/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
@@ -2092,11 +2092,121 @@ const FULL_PAGE1 = {
   const reloadA = requests.filter((r) => r.key === 'a' && r.session === 'member-b-jwt').pop()
   assert.ok(reloadA, 'A reloads on the account switch')
   assert.equal(reloadA.page, 1, 'reload requests page 1, not the stale page 2')
-  assert.equal(reloadA.kind, undefined, 'reload drops the previous-account filter')
+  assert.equal(reloadA.kind, 'alpha', 'reload preserves the active filter')
   assert.equal(instA.getState().query.page, 1, 'store query resets to page 1')
-  assert.deepEqual(instA.getParams(), {}, 'params reset to the static baseline')
+  assert.deepEqual(instA.getParams(), { kind: 'alpha' }, 'active params remain intact')
   assert.equal(instA.audit().ok, true, 'reset reload keeps DOM and store aligned')
-  console.log('PASS 61: account switch resets page/filters to baseline before reload')
+  console.log('PASS 61: account switch resets page and preserves filters')
+}
+
+// ---------- Test 62: opt-in state text/condition/class projections follow lifecycle ----------
+{
+  const markup = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-source="api:list" wf-xano-auth="none"
+      wf-xano-class-state="is-loading:status === 'loading';has-results:data.total > 0;bad class:status">
+      <span wf-xano-state="status"></span>
+      <span wf-xano-state="data.total" wf-xano-prefix="Total: "></span>
+      <div wf-xano-if-state="status === 'loading'" wf-xano-display="flex">Loading state</div>
+      <div wf-xano-if-state="status === 'success'">Ready state</div>
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let release
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => new Promise((resolve) => {
+    release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve(PAGE([{ id: 1, title: 'One' }], 7)) })
+  })
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano && root.classList.contains('is-loading')), 'loading class projects')
+  const loading = root.querySelector('[wf-xano-if-state*="loading"]')
+  const ready = root.querySelector('[wf-xano-if-state*="success"]')
+  assert.equal(root.querySelector('[wf-xano-state="status"]').textContent, 'loading')
+  assert.equal(root.querySelector('[wf-xano-state="data.total"]').textContent, 'Total: 0')
+  assert.equal(loading.style.display, 'flex')
+  assert.equal(loading.hasAttribute('aria-hidden'), false)
+  assert.equal(ready.style.display, 'none')
+  assert.equal(ready.getAttribute('aria-hidden'), 'true')
+  assert.equal(root.classList.contains('bad'), false, 'invalid class directive is ignored')
+  release()
+  assert.ok(await waitFor(() => root.__wfXano.getState().status === 'success' && root.classList.contains('has-results')))
+  assert.equal(root.querySelector('[wf-xano-state="status"]').textContent, 'success')
+  assert.equal(root.querySelector('[wf-xano-state="data.total"]').textContent, 'Total: 7')
+  assert.equal(loading.style.display, 'none')
+  assert.equal(loading.getAttribute('aria-hidden'), 'true')
+  assert.equal(ready.style.display, '')
+  assert.equal(ready.hasAttribute('aria-hidden'), false)
+  assert.equal(root.classList.contains('is-loading'), false)
+  console.log('PASS 62: state text/condition/class lifecycle projections')
+}
+
+// ---------- Test 63: projections respect wrapper ownership and external instance keys ----------
+{
+  const markup = `<!doctype html><html><body>
+    <span id="a-total" wf-xano-state="data.total" wf-xano-instance="a"></span>
+    <span id="b-total" wf-xano-state="data.total" wf-xano-instance="b"></span>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="api:a" wf-xano-auth="none">
+      <span class="inside" wf-xano-state="data.total"></span>
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="api:b" wf-xano-auth="none">
+      <span class="inside" wf-xano-state="data.total"></span>
+      <div wf-xano-template><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => makeRes(PAGE([{ id: url.endsWith('/a') ? 'a' : 'b', title: 'Row' }], url.endsWith('/a') ? 3 : 9))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('#a-total').textContent === '3' && w.document.querySelector('#b-total').textContent === '9'))
+  const roots = w.document.querySelectorAll('[wf-xano-list]')
+  assert.equal(roots[0].querySelector('.inside').textContent, '3')
+  assert.equal(roots[1].querySelector('.inside').textContent, '9')
+  console.log('PASS 63: projection wrapper/instance scoping')
+}
+
+// ---------- Test 64: synchronous transitions batch into one projection pass ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP.replace('<div wf-xano-empty', '<span wf-xano-state="revision"></span><div wf-xano-empty'), { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().status === 'success'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const inst = root.__wfXano
+  let passes = 0
+  const original = inst._projectState
+  inst._projectState = function () { passes += 1; return original.call(inst) }
+  inst._transition({ local: { selected: [1] } }, 'test:first')
+  inst._transition({ local: { selected: [1, 2] } }, 'test:second')
+  assert.ok(await waitFor(() => passes === 1))
+  assert.equal(root.querySelector('[wf-xano-state="revision"]').textContent, String(inst.getState().revision))
+  console.log('PASS 64: one batched projection pass per synchronous transition group')
+}
+
+// ---------- Test 65: destroy cancels a queued projection pass ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-list]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().status === 'success'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const inst = root.__wfXano
+  let passes = 0
+  inst._projectState = () => { passes += 1 }
+  inst._transition({ local: { queued: true } }, 'test:queued')
+  inst.destroy()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(passes, 0)
+  console.log('PASS 65: destroy cancels queued projections')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
