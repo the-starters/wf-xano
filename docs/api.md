@@ -29,6 +29,9 @@ script executes before **or** after the library loads (the same pattern as
 | `init(scope?)` | Scan `scope` (including the scope element itself; default `document`) and initialize new wrappers. |
 | `refresh(rootEl?)` | Re-fetch every list, or just the one owning `rootEl`. |
 | `destroy(rootEl?)` | Tear down every list, or just the one owning `rootEl`. |
+| `favorites.init(scope?)` | Wire favorite controls added by another renderer. A MutationObserver normally does this automatically. |
+| `favorites.refresh(type?)` | Re-fetch saved IDs for one type or every type present on the page. |
+| `favorites.ids(type)` | Return a copy of the in-memory saved IDs for one type. |
 
 ## Configuration
 
@@ -41,6 +44,9 @@ Set `window.WfXanoConfig` **before** the library loads:
     authBase: '…',        // required for authenticated lists: trade-token API group URL
     tradeTokenPath: '…',  // optional: trade-token path (default /auth/trade-token/v3)
     tradeTokenMethod: 'POST', // default; temporary legacy GET opt-in is available
+    favoritesSource: 'opp30:brand/favorites', // optional: enables <base>/ids + <base>/toggle
+    favoriteIdsSource: '…',    // optional full/group:path override
+    favoriteToggleSource: '…', // optional full/group:path override
     preAuth: true,        // pre-warm the trade-token handshake at script parse (default true)
     debug: true,          // console logging (default true)
   }
@@ -93,6 +99,16 @@ instance.on('beforeRender', async (items) => {
 })
 // …then use wf-xano-if="applied" in the card template.
 ```
+
+### Favorite DOM events
+
+The module dispatches document-level `CustomEvent`s so page analytics or UI code can react without
+coupling wf-xano to another SDK:
+
+| Event | `detail` | When |
+| --- | --- | --- |
+| `wf-xano:favorite` | `{ item_type, item_id, favorited }` | Authoritative toggle success |
+| `wf-xano:favorite-error` | `{ item_type, item_id, status }` | Hydration or toggle failure; excludes response bodies and auth data |
 
 ## Authentication
 

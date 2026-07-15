@@ -97,6 +97,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Scriptable** — pre-load callback queue, `results`/`error` events, and an async `beforeRender`
   transform hook to filter/augment items before render.
 - **Zero dependencies** — one small file, plain JS, no build step required.
+- **Cross-renderer favorites** — authenticated optimistic save controls work inside both wf-xano
+  and wf-algolia cards, with duplicate-card synchronization and authoritative Xano state.
 
 ## JavaScript API (quick look)
 
@@ -121,8 +123,8 @@ Releases are tagged (`v0.2.0`, …) and served via jsDelivr:
 
 | URL | Behavior |
 | --- | --- |
-| `…/gh/the-starters/wf-xano@0.17.0/wf-xano.min.js` | pinned — deterministic |
-| `…/gh/the-starters/wf-xano@0.17/wf-xano.min.js` | latest patch of 0.17 |
+| `…/gh/the-starters/wf-xano@0.18.0/wf-xano.min.js` | pinned — deterministic |
+| `…/gh/the-starters/wf-xano@0.18/wf-xano.min.js` | latest patch of 0.18 |
 | `…/gh/the-starters/wf-xano@latest/wf-xano.min.js` | latest release (purge jsDelivr after releasing) |
 
 `wf-xano.js` (readable) and `wf-xano.min.js` (minified) are both published.

@@ -55,6 +55,41 @@ These work on any descendant of the template **and on the template root itself**
 | `wf-xano-element="total"` | Total item count from the server. |
 | `wf-xano-element="count-from"` / `="count-to"` | Visible range — "Showing **9**–**12** of 45". |
 
+### Favorites
+
+Favorites are authenticated, member-scoped controls that work inside cards rendered by either
+wf-xano or wf-algolia. Configure `WfXanoConfig.favoritesSource` once, then use:
+
+```html
+<button
+  type="button"
+  wf-xano-element="favorite"
+  wf-xano-favorite-type="starter"
+  wf-xano-favorite-label-add="Save Starter"
+  wf-xano-favorite-label-remove="Remove saved Starter">
+  Save
+</button>
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `wf-xano-element="favorite"` | ✅ | Marks the save/remove control. The legacy `wf-xano-favorite` marker is also accepted. |
+| `wf-xano-favorite-type` | ✅ | Server allow-listed namespace such as `starter`. May live on the control or an ancestor. |
+| `wf-xano-favorite-id` | — | Explicit item ID. Otherwise resolves from the closest `data-wf-xano-id`, then wf-algolia's `data-wf-algolia-hit-objectid`. |
+| `wf-xano-favorite-label-add` | — | Accessible label while unsaved. Defaults to `Save item`. |
+| `wf-xano-favorite-label-remove` | — | Accessible label while saved. Defaults to `Remove saved item`. |
+
+The control gets `is-wf-xano-favorited`, `is-wf-xano-loading`, `aria-pressed`, and `aria-busy`.
+Toggles are optimistic and roll back on failure; every visible copy of the same type/ID stays in
+sync. An authenticated IDs request hydrates state after reload and whenever another renderer adds
+cards. A wrapper with `wf-xano-refresh-on="favorite"` automatically refreshes after a successful
+toggle; optionally put the same `wf-xano-favorite-type` on the wrapper to scope refreshes.
+
+Required endpoints under the configured base are `POST <base>/ids` with `{ item_type }` returning
+`{ ids: [...] }`, and `POST <base>/toggle` with `{ item_type, item_id }` returning
+`{ favorited: boolean }`. Both receive the normal Xano bearer token. Authorization, member identity,
+item validation, and the type allow-list must be enforced server-side.
+
 ### Pagination
 
 | Attribute | Description |
@@ -119,6 +154,7 @@ Add these to the elements above to tune behavior.
 | `wf-xano-debounce` | ms | `300` | Debounce for search inputs (can be overridden per input). |
 | `wf-xano-url-sync` | `true` | — | Write page + declared filter/search/sort state to the query string (`<key>_page`, `<key>_<param>`) and restore it on load. Static `wf-xano-param-*` values are never serialized or overwritten from the URL. |
 | `wf-xano-param-<name>` | any value | — | Static request param, e.g. `wf-xano-param-status="Active"`. |
+| `wf-xano-refresh-on` | `favorite` | — | Re-fetch this list after a successful favorite toggle. Add `wf-xano-favorite-type` to scope it to one type. |
 
 ### On cards / controls
 
@@ -139,6 +175,7 @@ The list root receives CSS classes you can style in Webflow:
 | `is-wf-xano-loading` | a request is in flight |
 | `is-wf-xano-error` | the last request failed |
 | `is-wf-xano-empty` | the last response had 0 items |
+| `is-wf-xano-favorited` | a favorite control's item is saved |
 
 ## Scoping & instance keys
 
