@@ -180,8 +180,8 @@ Add these to the elements above to tune behavior.
 
 | Attribute | Applies to | Description |
 | --- | --- | --- |
-| `wf-xano-format` | `wf-xano-bind` elements | Date/time styles: `date` (visitor-locale short, `5/21/2026`), **`date-medium`** / **`date-long`** (`May 21, 2026` — full/short month, pinned en-US so it's stable & unambiguous, v0.10.0+), `datetime`, `datetime-long`. Unset timestamps (Xano `0`) render blank, not `1/1/1970`. Also `short-name` (v0.7.1+) — abbreviates every word after the first (`John Paul Dionisio` → `John P. D.`). Set `WfXanoConfig.locale` to override the en-US default for the named date styles. |
-| `wf-xano-display` | `wf-xano-if` elements and the `empty`/`loader`/`error` state elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
+| `wf-xano-format` | `wf-xano-bind` and `wf-xano-state` elements | Date/time styles: `date` (visitor-locale short, `5/21/2026`), **`date-medium`** / **`date-long`** (`May 21, 2026` — full/short month, pinned en-US so it's stable & unambiguous, v0.10.0+), `datetime`, `datetime-long`. Unset timestamps (Xano `0`) render blank, not `1/1/1970`. Also `short-name` (v0.7.1+) — abbreviates every word after the first (`John Paul Dionisio` → `John P. D.`). Set `WfXanoConfig.locale` to override the en-US default for the named date styles. |
+| `wf-xano-display` | `wf-xano-if`/`wf-xano-if-state` elements and the `empty`/`loader`/`error` state elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
 | `wf-xano-link-prefix` / `wf-xano-link-suffix` | `wf-xano-link` elements | Wrap the field value: `prefix + value + suffix`. |
 | `wf-xano-value` | checkbox/radio filters | The real filter value — Webflow checkboxes all submit `"on"`. |
 | `wf-xano-debounce` | a `wf-xano-search` input | Per-input debounce override. |
