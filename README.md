@@ -94,8 +94,9 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Designer-friendly** — instance keys let counts and controls live anywhere on the page; state
   classes (`is-wf-xano-loading/error/empty`) are styleable in Webflow; templates are FOUC-guarded.
 - **Deep-linkable** — opt-in URL sync keeps page + filters in the query string and restores them.
-- **Scriptable** — pre-load callback queue, `results`/`error` events, and an async `beforeRender`
-  transform hook to filter/augment items before render.
+- **Scriptable** — pre-load callback queue, `results`/`error` events, an async `beforeRender`
+  transform hook to filter/augment items before render, and an observable reactive store
+  (`getState`/`subscribe`, since v0.19).
 - **Zero dependencies** — one small file, plain JS, no build step required.
 - **Cross-renderer favorites** — authenticated optimistic save controls work inside both wf-xano
   and wf-algolia cards, with duplicate-card synchronization and authoritative Xano state.
