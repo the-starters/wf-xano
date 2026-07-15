@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.18.1 — 2026-07-15
+
+### Fixed
+
+- Favorite controls now bind their click listener directly, so surrounding Webflow/wf-algolia
+  card handlers cannot stop propagation before the toggle reaches wf-xano or navigate away first.
+
 ## v0.18.0 — 2026-07-14
 
 ### Added
