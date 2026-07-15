@@ -1,7 +1,7 @@
 # 🧭 wf-xano Reactive Runtime Migration Plan
 
-Last updated: 2026-07-15  
-Owner: The Starters Platform / wf-xano maintainers  
+Last updated: 2026-07-15
+Owner: The Starters Platform / wf-xano maintainers
 Status: Phase 0–1 implemented locally; validation in progress
 
 ## 📌 TL;DR
