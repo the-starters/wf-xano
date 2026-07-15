@@ -3090,4 +3090,36 @@ const FULL_PAGE1 = {
   console.log('PASS 89: rendered-record form snapshots are pruned when cards leave the DOM')
 }
 
+// ---------- Test 90: late invalid form mutations fail safely in delegated change listeners ----------
+{
+  const markup = `<!doctype html><html><body><div wf-xano-element="wrapper" wf-xano-auth="none">
+    <form wf-xano-form="dynamic" wf-xano-form-source="api:save" wf-xano-form-auth="none">
+      <input wf-xano-field="title" value="Draft"><button type="submit">Save</button>
+    </form>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  let writes = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => { writes += 1; return makeRes({ ok: true }) }
+  w.eval(LIB)
+  const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+  assert.ok(await waitFor(() => root.__wfXano && root.__wfXano.getState().form.dynamic))
+  const input = root.querySelector('[wf-xano-field]')
+  const before = root.__wfXano.getState().form.dynamic
+  // A delegated-listener throw is swallowed by dispatchEvent and re-surfaced as
+  // an uncaught error on the window; capture it so the guard is actually
+  // exercised (without the try/catch this fires and fails the assertion below).
+  let listenerError = null
+  w.addEventListener('error', function (e) { listenerError = e.error ? e.error.message : String(e.message) })
+  input.type = 'file'
+  assert.doesNotThrow(() => input.dispatchEvent(new w.Event('input', { bubbles: true })))
+  await new Promise(function (r) { setTimeout(r, 0) })
+  assert.equal(listenerError, null, 'delegated change listener does not throw on configuration drift')
+  assert.deepEqual(root.__wfXano.getState().form.dynamic, before, 'last valid snapshot survives configuration drift')
+  assert.equal(await root.__wfXano.submitForm(root.querySelector('form')), false)
+  assert.equal(writes, 0)
+  console.log('PASS 90: late invalid form mutations fail safely without writes or event errors')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
