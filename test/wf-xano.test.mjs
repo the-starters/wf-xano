@@ -2050,4 +2050,53 @@ const FULL_PAGE1 = {
   console.log('PASS 60: account switch clears and reloads every authenticated instance')
 }
 
+// ---------- Test 61: account switch resets page/filters to baseline before reload ----------
+{
+  const MARKUP = `<!doctype html><html><body>
+    <div wf-xano-list wf-xano-instance="a" wf-xano-source="opp30:a/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div>
+    <div wf-xano-list wf-xano-instance="b" wf-xano-source="opp30:b/list" wf-xano-auth="memberstack" wf-xano-per-page="10">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-empty style="display:none">none</div>
+    </div></body></html>`
+  const dom = new JSDOM(MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  let session = 'member-a-jwt'
+  const requests = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(session) }
+  w.fetch = (url, req) => {
+    if (url.endsWith('/trade')) return makeRes({ authToken: 'token-for-' + session })
+    const key = /a\/list/.test(url) ? 'a' : 'b'
+    const body = req && req.body ? JSON.parse(req.body) : {}
+    requests.push({ key, session, page: body.page, kind: body.kind })
+    // Page 2 for account A only has data on account A; account B has 1 page.
+    return makeRes(PAGE([{ id: key + '-' + session, title: key.toUpperCase() }], 30, body.page || 1, 3))
+  }
+  w.eval(LIB)
+  const lists = w.document.querySelectorAll('[wf-xano-list]')
+  assert.ok(await waitFor(() => lists[0].__wfXano && lists[1].__wfXano))
+  const instA = lists[0].__wfXano
+  const instB = lists[1].__wfXano
+  assert.ok(await waitFor(() => instA.getState().status === 'success' && instB.getState().status === 'success'))
+  // A navigates to page 2 with a member-A filter before the account switch.
+  await instA.setParam('kind', 'alpha')
+  await instA.goToPage(2)
+  assert.ok(await waitFor(() => instA.getState().query.page === 2 && instA.getParams().kind === 'alpha'))
+  requests.length = 0
+  session = 'member-b-jwt'
+  await instB.refresh()
+  assert.ok(await waitFor(() => instA.getState().data.items[0]?.id === 'a-member-b-jwt'))
+  const reloadA = requests.filter((r) => r.key === 'a' && r.session === 'member-b-jwt').pop()
+  assert.ok(reloadA, 'A reloads on the account switch')
+  assert.equal(reloadA.page, 1, 'reload requests page 1, not the stale page 2')
+  assert.equal(reloadA.kind, undefined, 'reload drops the previous-account filter')
+  assert.equal(instA.getState().query.page, 1, 'store query resets to page 1')
+  assert.deepEqual(instA.getParams(), {}, 'params reset to the static baseline')
+  assert.equal(instA.audit().ok, true, 'reset reload keeps DOM and store aligned')
+  console.log('PASS 61: account switch resets page/filters to baseline before reload')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

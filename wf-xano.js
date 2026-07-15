@@ -1160,11 +1160,14 @@
         reload.push(instance)
       }
       instance._lastResult = null
+      instance.page = 1
+      instance.params = Object.assign({}, instance.baseParams)
       if (instance.template) {
         qa(instance.listEl || instance.template.parentNode, '[wf-xano-item]').forEach(function (card) {
           card.remove()
         })
       }
+      instance.hydrateControls()
       showStateEl(instance.emptyEl, false)
       instance.root.classList.remove('is-wf-xano-empty')
       instance.setState('loading')
@@ -1172,6 +1175,7 @@
         {
           status: 'loading',
           data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
+          query: { params: Object.assign({}, instance.params), page: instance.page, perPage: instance.perPage },
           error: null,
         },
         'auth:change',
