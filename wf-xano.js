@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.19.0'
+  var VERSION = '0.20.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1161,13 +1161,11 @@
       }
       instance._lastResult = null
       instance.page = 1
-      instance.params = Object.assign({}, instance.baseParams)
       if (instance.template) {
         qa(instance.listEl || instance.template.parentNode, '[wf-xano-item]').forEach(function (card) {
           card.remove()
         })
       }
-      instance.hydrateControls()
       showStateEl(instance.emptyEl, false)
       instance.root.classList.remove('is-wf-xano-empty')
       instance.setState('loading')
@@ -1243,6 +1241,8 @@
     this._pages = 1
     this._lastResult = null
     this._subscribers = []
+    this._projectionScheduled = false
+    this._destroyed = false
     this._state = {
       status: 'idle',
       data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
@@ -1346,6 +1346,7 @@
       previous: { status: previous.status, revision: previous.revision },
       current: { status: next.status, revision: next.revision },
     })
+    this._scheduleProjections()
     return next
   }
 
@@ -1380,6 +1381,63 @@
       var index = self._subscribers.indexOf(sub)
       if (index > -1) self._subscribers.splice(index, 1)
     }
+  }
+
+  /** Coalesce every synchronous state transition into one DOM projection
+   *  pass. Promise microtasks keep the runtime dependency-free and ensure a
+   *  query update immediately followed by load:start paints only the latest
+   *  snapshot. */
+  Instance.prototype._scheduleProjections = function () {
+    if (this._projectionScheduled || this._destroyed) return
+    this._projectionScheduled = true
+    var self = this
+    Promise.resolve().then(function () {
+      self._projectionScheduled = false
+      if (!self._destroyed) self._projectState()
+    })
+  }
+
+  /** Apply opt-in, read-only state projections. Expressions reuse evalIf's
+   *  allowlisted comparison grammar; no arbitrary JavaScript is executed. */
+  Instance.prototype._projectState = function () {
+    var state = this._state
+    var self = this
+    var projectionElements = function (selector) {
+      var elements = self.qa(selector)
+      if (self.root.matches(selector)) elements.unshift(self.root)
+      return elements
+    }
+    projectionElements('[wf-xano-state]').forEach(function (el) {
+      var value = get(state, el.getAttribute('wf-xano-state'))
+      var text = value != null && typeof value !== 'object' ? fmt(value, el.getAttribute('wf-xano-format')) : ''
+      if (text === '' && el.hasAttribute('wf-xano-default')) text = el.getAttribute('wf-xano-default')
+      if (text !== '') {
+        text = (el.getAttribute('wf-xano-prefix') || '') + text + (el.getAttribute('wf-xano-suffix') || '')
+      }
+      el.textContent = text
+    })
+    projectionElements('[wf-xano-if-state]').forEach(function (el) {
+      var visible = evalIf(el.getAttribute('wf-xano-if-state') || '', state)
+      showStateEl(el, visible)
+      if (visible) el.removeAttribute('aria-hidden')
+      else el.setAttribute('aria-hidden', 'true')
+    })
+    projectionElements('[wf-xano-class-state]').forEach(function (el) {
+      String(el.getAttribute('wf-xano-class-state') || '')
+        .split(';')
+        .map(function (entry) { return entry.trim() })
+        .filter(Boolean)
+        .forEach(function (entry) {
+          var separator = entry.indexOf(':')
+          if (separator < 1) return
+          var className = entry.slice(0, separator).trim()
+          var expression = entry.slice(separator + 1).trim()
+          // One CSS identifier only: no selectors, whitespace, or utility
+          // syntax that could mutate unrelated elements/classes.
+          if (!/^-?[_a-zA-Z]+[_a-zA-Z0-9-]*$/.test(className) || !expression) return
+          el.classList.toggle(className, evalIf(expression, state))
+        })
+    })
   }
 
   /** wf-xano-param-<name>="value" -> static request params (empties skipped). */
@@ -2108,6 +2166,7 @@
 
   /** Tear down: abort listeners, drop rendered items, unregister. */
   Instance.prototype.destroy = function () {
+    this._destroyed = true
     this._seq++ // invalidate any in-flight load
     if (this._ac) this._ac.abort()
     if (this._fetchAc) this._fetchAc.abort()
