@@ -78,7 +78,7 @@ wf-xano or wf-algolia. Configure `WfXanoConfig.favoritesSource` once, then use:
 | `wf-xano-favorite-id` | — | Explicit item ID. Otherwise resolves from the closest `data-wf-xano-id`, then wf-algolia's `data-wf-algolia-hit-objectid`. |
 | `wf-xano-favorite-label-add` | — | Accessible label while unsaved. Defaults to `Save item`. |
 | `wf-xano-favorite-label-remove` | — | Accessible label while saved. Defaults to `Remove saved item`. |
-| `wf-xano-favorite-class` | — | Active class applied to the control and marked visuals. Defaults to `is-active`. |
+| `wf-xano-favorite-class` | — | Active class applied to the control and marked visuals. Accepts multiple space-separated classes. Defaults to `is-active`. |
 | `wf-xano-element="favorite-visual"` | — | Marks a descendant that receives the favorite control's active class. Multiple descendants are supported; unmarked descendants are unchanged. |
 
 When saved, the control and every marked `favorite-visual` descendant get `is-active` by default.
