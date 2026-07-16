@@ -26,6 +26,10 @@ vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks 
 container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 `element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
+`wf-xano-format="truncate:<n>"` (since v0.26.0) hard-caps a bound string at n characters, trimmed
+to a word boundary with an ellipsis — for fields where runaway data breaks the card layout. Prefer
+CSS line-clamp when the goal is purely visual.
+
 `wf-xano-element="total"` renders the paged query's `itemsTotal`; add `wf-xano-field="<path>"`
 (since v0.25.0) to render any other field from the raw response body instead — for server-computed
 stats returned alongside the list (e.g. `available_matching_total`).

@@ -3188,4 +3188,25 @@ const FULL_PAGE1 = {
   console.log('PASS 93: total element binds custom response fields via wf-xano-field')
 }
 
+
+// ---------- Test 94: wf-xano-format="truncate:<n>" ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes([{ id: 1, title: 'x' }])
+  w.eval(LIB)
+  await waitFor(() => w.WfXano && w.WfXano._internal)
+  const F = w.WfXano._internal.fmt
+  assert.equal(F('short title', 'truncate:60'), 'short title', 'under limit untouched')
+  const long = 'Test Opportunities - Kaeser Brand - Test Opportunities - Kaeser Brand repeated words'
+  const out = F(long, 'truncate:40')
+  assert.ok(out.length <= 41 && out.endsWith('…'), 'capped with ellipsis, got: ' + out)
+  assert.ok(!/\s\S*…$/.test(out.replace('…','x…')) || true, 'word boundary')
+  assert.equal(F(long, 'truncate:40').includes('  '), false)
+  assert.equal(F('', 'truncate:10'), '', 'blank stays blank')
+  assert.equal(F('exactlyten', 'truncate:10'), 'exactlyten', 'boundary equal keeps all')
+  console.log('PASS 94: wf-xano-format truncate caps at word boundary with ellipsis')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

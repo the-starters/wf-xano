@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.26.0 — 2026-07-16
+
+- `wf-xano-format="truncate:<n>"`: hard character cap on bound strings, trimmed to a word boundary
+  with an ellipsis appended.
+
 ## v0.25.0 — 2026-07-16
 
 - `wf-xano-element="total"` accepts `wf-xano-field="<path>"` to render any field from the raw
