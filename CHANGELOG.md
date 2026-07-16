@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.25.0 — 2026-07-16
+
+- `wf-xano-element="total"` accepts `wf-xano-field="<path>"` to render any field from the raw
+  response body (server-computed stats beside the paged list, e.g. `available_matching_total`)
+  instead of the query's own `itemsTotal`.
+
 ## v0.24.0 — 2026-07-16
 
 - New `wf-xano-element="delete"`: marks Designer placeholder elements (duplicate static cards kept

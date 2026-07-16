@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.24.0'
+  var VERSION = '0.25.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -2688,6 +2688,9 @@
       if (!res.ok) throw Object.assign(new Error('wf-xano ' + res.status), { status: res.status, data: data })
 
       var result = normalize(data, this.perPage)
+      // Raw body kept for stat elements that bind response fields outside the
+      // paged list (wf-xano-element="total" + wf-xano-field="<path>").
+      result.raw = data
       this.page = result.page
       // beforeRender hooks may transform (filter/augment/reorder) the items.
       var hooks = this.listeners['beforeRender'] || []
@@ -2796,7 +2799,16 @@
       to = result.items.length ? from + result.items.length - 1 : 0
     }
     this.qa(elSel('total')).forEach(function (el) {
-      el.textContent = String(result.total)
+      // A total element may bind any response field (server-computed stats
+      // like available_matching_total) via wf-xano-field; default stays the
+      // paged query's own itemsTotal.
+      var statField = el.getAttribute('wf-xano-field')
+      if (statField) {
+        var stat = get(result.raw, statField)
+        el.textContent = stat == null ? '' : String(stat)
+      } else {
+        el.textContent = String(result.total)
+      }
     })
     this.qa(elSel('count-from')).forEach(function (el) {
       el.textContent = String(from)

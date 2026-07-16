@@ -26,6 +26,10 @@ vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks 
 container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 `element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
+`wf-xano-element="total"` renders the paged query's `itemsTotal`; add `wf-xano-field="<path>"`
+(since v0.25.0) to render any other field from the raw response body instead — for server-computed
+stats returned alongside the list (e.g. `available_matching_total`).
+
 `wf-xano-element="delete"` (since v0.24.0) marks Designer placeholder elements for removal: they
 are hidden by the FOUC guard and removed from the DOM at boot, anywhere on the page. Use it on the
 duplicate static cards kept next to a template for visual editing, instead of deleting them by hand

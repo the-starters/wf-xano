@@ -3167,4 +3167,25 @@ const FULL_PAGE1 = {
   console.log('PASS 92: normalize unwraps {items: paging} responses')
 }
 
+
+// ---------- Test 93: total element binds a custom response field ----------
+{
+  const markup = `<!doctype html><html><body>
+  <div wf-xano-element="wrapper" wf-xano-source="opp30:starter/opportunities/list" wf-xano-auth="none" wf-xano-per-page="12">
+    <span class="applied-total" wf-xano-element="total"></span>
+    <span class="avail-total" wf-xano-element="total" wf-xano-field="available_matching_total"></span>
+    <div class="list"><div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div></div>
+    <div wf-xano-element="empty" style="display:none">none</div>
+  </div></body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], itemsTotal: 4, curPage: 1, pageTotal: 1, available_matching_total: 27 })
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'card rendered')
+  assert.equal(w.document.querySelector('.applied-total').textContent, '4', 'default total = itemsTotal')
+  assert.equal(w.document.querySelector('.avail-total').textContent, '27', 'wf-xano-field total reads raw response stat')
+  console.log('PASS 93: total element binds custom response fields via wf-xano-field')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
