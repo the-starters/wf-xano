@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.25.0'
+  var VERSION = '0.26.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -311,6 +311,16 @@
    *  else the raw value. */
   function fmt(value, kind) {
     if (isBlank(value)) return ''
+    // truncate:<n> — cap at n chars, trimmed back to a word boundary, with an
+    // ellipsis. For pure visual clamping prefer CSS line-clamp; this is for
+    // hard caps where overflow data breaks the layout.
+    var truncMatch = /^truncate:(\d+)$/.exec(kind || '')
+    if (truncMatch) {
+      var limit = parseInt(truncMatch[1], 10)
+      var str = String(value).trim()
+      if (str.length <= limit) return str
+      return str.slice(0, limit).trim().replace(/\s+\S*$/, '') + '…'
+    }
     if (kind && DATE_KINDS[kind]) {
       // Xano commonly stores an unset timestamp as 0. Keep that special case
       // local to date formatting so legitimate numeric zero values still bind.
