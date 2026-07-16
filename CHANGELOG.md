@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.23.0 — Unreleased
+## v0.23.0 — 2026-07-15
 
 - Declarative `wf-xano-form` controllers for form-only wrappers and forms inside rendered records.
 - Allowlisted `wf-xano-field` JSON serialization; text, checkbox/radio groups, and multi-selects
