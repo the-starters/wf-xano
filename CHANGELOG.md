@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.24.0 — 2026-07-16
+
+- New `wf-xano-element="delete"`: marks Designer placeholder elements (duplicate static cards kept
+  for visual editing) for removal at boot — FOUC-guarded so they never flash, removed document-wide.
+- `normalize()` now unwraps a paging object nested one level under an `items` response key
+  (XanoScript `response = {items: $paged}`), which previously fell through to the single-object
+  branch and rendered one phantom card with empty binds.
+
 ## v0.23.0 — 2026-07-15
 
 - Declarative `wf-xano-form` controllers for form-only wrappers and forms inside rendered records.

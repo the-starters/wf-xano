@@ -26,6 +26,11 @@ vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks 
 container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 `element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
+`wf-xano-element="delete"` (since v0.24.0) marks Designer placeholder elements for removal: they
+are hidden by the FOUC guard and removed from the DOM at boot, anywhere on the page. Use it on the
+duplicate static cards kept next to a template for visual editing, instead of deleting them by hand
+before every publish.
+
 ## When to use which
 
 | | **wf-xano** | search library (e.g. wf-algolia) |

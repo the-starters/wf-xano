@@ -3122,4 +3122,49 @@ const FULL_PAGE1 = {
   console.log('PASS 90: late invalid form mutations fail safely without writes or event errors')
 }
 
+
+// ---------- Test 91: element="delete" placeholders removed at boot ----------
+{
+  const markup = `<!doctype html><html><body>
+  <div wf-xano-element="wrapper" wf-xano-source="opp30:x/list" wf-xano-auth="none" wf-xano-per-page="12">
+    <div class="list">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <div wf-xano-element="delete" class="ph"><h3>Placeholder A</h3></div>
+      <div wf-xano-element="delete" class="ph"><h3>Placeholder B</h3></div>
+    </div>
+    <div wf-xano-element="empty" style="display:none">none</div>
+  </div>
+  <div wf-xano-element="delete" class="ph">outside any instance</div>
+  </body></html>`
+  const dom = new JSDOM(markup, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, title: 'Real' }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), 'real card rendered')
+  assert.equal(w.document.querySelectorAll('[wf-xano-element="delete"]').length, 0, 'all delete placeholders removed')
+  assert.equal(w.document.querySelectorAll('.ph').length, 0, 'placeholders gone including outside instances')
+  console.log('PASS 91: wf-xano-element="delete" placeholders removed at boot')
+}
+
+// ---------- Test 92: normalize unwraps paging object nested under items key ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  // Response shape from XanoScript `response = {items: $paged}` — paging
+  // object wrapped one level down.
+  const nested = { items: { items: [{ id: 7, title: 'Wrapped' }, { id: 8, title: 'Also' }], itemsTotal: 14, curPage: 1, pageTotal: 2 } }
+  w.fetch = () => makeRes(nested)
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'nested paging renders both rows')
+  assert.equal(w.document.querySelector('[wf-xano-item] [wf-xano-bind="title"]').textContent, 'Wrapped')
+  const N = w.WfXano._internal.normalize
+  assert.equal(N(nested, 12).total, 14, 'total read from unwrapped itemsTotal')
+  assert.equal(N(nested, 12).pages, 2, 'pages read from unwrapped pageTotal')
+  // Plain single objects (no nested items array) still render as one row.
+  assert.equal(N({ id: 1, name: 'solo' }, 12).total, 1, 'single-object branch unchanged')
+  console.log('PASS 92: normalize unwraps {items: paging} responses')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

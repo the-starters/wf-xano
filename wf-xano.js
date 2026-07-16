@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.23.0'
+  var VERSION = '0.24.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -94,7 +94,7 @@
   try {
     var foucStyle = document.createElement('style')
     foucStyle.textContent =
-      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"],[wf-xano-element="page-dots"]{display:none!important}'
+      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"],[wf-xano-element="page-dots"],[wf-xano-element="delete"]{display:none!important}'
     ;(document.head || document.documentElement).appendChild(foucStyle)
   } catch (e) {
     /* non-fatal */
@@ -778,6 +778,11 @@
   // pagination still needs itemsTotal/pageTotal to know the true last page.
   function normalize(data, perPage) {
     if (Array.isArray(data)) return { items: data, total: data.length, page: 1, pages: 1, hasMore: false }
+    // Endpoints that wrap the paging object under a single response key
+    // (XanoScript `response = {items: $paged}`) produce {items: {items: […]}}.
+    // Unwrap one level so the paged list parses as itself instead of falling
+    // through to the single-object branch (one phantom card, empty binds).
+    if (data && data.items && !Array.isArray(data.items) && Array.isArray(data.items.items)) data = data.items
     if (data && Array.isArray(data.items)) {
       var total = data.itemsTotal != null ? data.itemsTotal : data.items.length
       var page = data.curPage || 1
@@ -3030,6 +3035,14 @@
   /* ============================ BOOTSTRAP ============================= */
   function init(scope) {
     var root = scope || document
+    // Designer placeholders marked for removal (duplicate static cards kept
+    // for visual editing) — drop them before any instance boots so they can
+    // never flash or linger alongside rendered data.
+    var doomed = qa(root, '[wf-xano-element="delete"]')
+    if (root.matches && root.matches('[wf-xano-element="delete"]')) doomed.unshift(root)
+    doomed.forEach(function (el) {
+      el.remove()
+    })
     // Roots: canonical `wrapper`, plus legacy aliases — the bare
     // wf-xano-list marker and v0.3.0's element="list" WITH wf-xano-source
     // (source disambiguates a root from Finsweet-style items containers).
