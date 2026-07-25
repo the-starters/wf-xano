@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.26.0'
+  var VERSION = '0.27.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -2913,6 +2913,19 @@
 
   Instance.prototype.renderPagination = function (result) {
     var self = this
+    // Whole-UI visibility runs before the page-number early return: a pager
+    // may hold only prev/next, with no numbered template to clone. Pages
+    // 0/undefined count as single so odd responses hide rather than strand
+    // a one-page pager. Two-way, so a later result (filter change) re-shows.
+    // Never treated as single past page 1: count-disabled endpoints
+    // (nextPage/curPage only) collapse pages to 1 on the last page, so the
+    // prev button must stay reachable whenever curPage > 1.
+    var single = !(result.pages > 1 || result.page > 1)
+    this.qa(elSel('pagination-wrapper')).forEach(function (el) {
+      showStateEl(el, !single)
+    })
+    this.root.classList.toggle('is-wf-xano-single-page', single)
+
     this.qa(elSel('page-prev')).forEach(function (el) {
       var disabled = result.page <= 1
       el.classList.toggle('is-disabled', disabled)

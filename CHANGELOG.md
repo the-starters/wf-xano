@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.27.0 — 2026-07-25
+
+- New `wf-xano-element="pagination-wrapper"`: marks the element wrapping the whole pagination UI
+  and hides it whenever a first-page result fits on a single page, so a one-page result no longer
+  leaves inert pager chrome on the page. Stays visible past page 1 so the prev button remains
+  reachable (including on the last page of count-disabled `curPage`/`nextPage`-only endpoints).
+  Respects `wf-xano-display` for the shown value and re-shows when a later result spans more pages.
+- The root gets `is-wf-xano-single-page` on single-page results, toggled both ways, with or without
+  a wrapper element present.
+- Deliberately not FOUC-guarded, so the wrapper stays visible in the Designer and before the first
+  results land. Pagination load mode only; append modes keep using `is-wf-xano-exhausted`.
+
 ## v0.26.0 — 2026-07-16
 
 - `wf-xano-format="truncate:<n>"`: hard character cap on bound strings, trimmed to a word boundary

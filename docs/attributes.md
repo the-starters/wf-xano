@@ -235,6 +235,31 @@ item validation, and the type allow-list must be enforced server-side.
 | `wf-xano-element="page-prev"` / `="page-next"` | Prev/next controls. Get `is-disabled` at the range edges. |
 | `wf-xano-element="page-number"` | Template button, cloned per visible page. Clones get `wf-xano-page-num`; the current page gets `is-active` and `aria-current="page"`. |
 | `wf-xano-element="page-dots"` | Optional ellipsis template, cloned into gaps between the boundary pages and the current-page window (e.g. `1 2 … 7 8 9 … 24 25`). Clones get `wf-xano-page-dot`. Omit it and gaps are simply skipped (no ellipsis). |
+| `wf-xano-element="pagination-wrapper"` | The element wrapping the whole pagination UI (prev, numbers, dots, next). Hidden automatically whenever the result has only one page, and shown again when a later result has more. |
+
+Mark the container — not the individual controls — with `pagination-wrapper` so a one-page result
+hides the surrounding chrome (borders, padding, "Page 1 of 1") instead of leaving an inert pager on
+the page. It is optional: leave it off and no rendered element changes — though the
+`is-wf-xano-single-page` root class described below is applied either way.
+
+The wrapper is **not** FOUC-guarded, so it stays visible in the Designer and before the first
+results land. Hiding sets `display: none`; showing clears the inline style so your class takes over.
+If the wrapper's own class supplies the layout, give it `wf-xano-display="flex"` (or `grid`, …) and
+that value is restored as the shown value, exactly as on `loader`/`empty`.
+
+Either grammar works: `wf-xano-element="pagination-wrapper"` or the legacy `wf-xano-pagination-wrapper` marker.
+
+The wrapper is only hidden on the **first** page: past page 1 it always stays visible so the prev
+button remains reachable — including on the last page of a count-disabled Xano endpoint (one that
+returns `curPage`/`nextPage` but no total), where the derived page count collapses to 1.
+
+The root also gets **`is-wf-xano-single-page`** whenever the result fits on one page — with or
+without a wrapper element — so you can style the single-page case in Webflow without hiding
+anything. Both the class and the wrapper toggle in **both** directions as filters widen or narrow
+the result set.
+
+This applies only in the default `pagination` load mode — the append modes (`more`, `infinite`,
+`all`) never call the pagination renderer and use `load-more` plus `is-wf-xano-exhausted` instead.
 
 Numbered buttons follow Finsweet's boundary + window model: `wf-xano-page-boundary` pages are pinned at each edge and a `wf-xano-page-window` of pages centers on the current page. **Numbered pagination requires the endpoint to return `itemsTotal`** (or `pageTotal`) so the true last page is known — otherwise wf-xano only knows there's a *next* page and shows `current … next`. If your endpoint emits only `nextPage` (Xano's default paged list), use a **load mode** below instead.
 
@@ -299,7 +324,7 @@ Add these to the elements above to tune behavior.
 | Attribute | Applies to | Description |
 | --- | --- | --- |
 | `wf-xano-format` | `wf-xano-bind` and `wf-xano-state` elements | Date/time styles: `date` (visitor-locale short, `5/21/2026`), **`date-medium`** / **`date-long`** (`May 21, 2026` — full/short month, pinned en-US so it's stable & unambiguous, v0.10.0+), `datetime`, `datetime-long`. Unset timestamps (Xano `0`) render blank, not `1/1/1970`. Also `short-name` (v0.7.1+) — abbreviates every word after the first (`John Paul Dionisio` → `John P. D.`). Set `WfXanoConfig.locale` to override the en-US default for the named date styles. |
-| `wf-xano-display` | `wf-xano-if`/`wf-xano-if-state` elements and the `empty`/`loader`/`error` state elements | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
+| `wf-xano-display` | `wf-xano-if`/`wf-xano-if-state` elements, the `empty`/`loader`/`error` state elements, and `pagination-wrapper` | Display value when shown (e.g. `flex`). Default clears the inline style so the element's own class takes over. |
 | `wf-xano-link-prefix` / `wf-xano-link-suffix` | `wf-xano-link` elements | Wrap the field value: `prefix + value + suffix`. |
 | `wf-xano-value` | checkbox/radio filters | The real filter value — Webflow checkboxes all submit `"on"`. |
 | `wf-xano-debounce` | a `wf-xano-search` input | Per-input debounce override. |
@@ -313,6 +338,7 @@ The list root receives CSS classes you can style in Webflow:
 | `is-wf-xano-loading` | a request is in flight |
 | `is-wf-xano-error` | the last request failed |
 | `is-wf-xano-empty` | the last response had 0 items |
+| `is-wf-xano-single-page` | the last result fits on one page (pagination load mode only) |
 | `is-wf-xano-favorited` | a favorite control's item is saved |
 
 ## Scoping & instance keys
