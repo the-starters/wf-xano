@@ -3295,6 +3295,37 @@ const FULL_PAGE1 = {
       assert.equal(w.document.querySelectorAll('[wf-xano-page-num]').length, 1, `${build} numbered buttons still render`)
     }
 
+    // (h) count-disabled endpoint (curPage/nextPage only, no itemsTotal/pageTotal):
+    // the last page collapses derived pages to 1 while curPage > 1, but the
+    // wrapper must stay visible so the prev button remains reachable.
+    {
+      const w = new JSDOM(wrapMarkup('wf-xano-element="pagination-wrapper"'), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      // page 1 of a count-off endpoint: more pages ahead (nextPage present)
+      w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], curPage: 1, nextPage: 2 })
+      w.eval(lib)
+      const shell = w.document.querySelector('.pager-shell')
+      const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+      assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), `${build} count-off rendered`)
+      assert.equal(shell.style.display, '', `${build} count-off wrapper visible on page 1 with nextPage`)
+      assert.equal(root.classList.contains('is-wf-xano-single-page'), false, `${build} count-off no single-page class on page 1`)
+      // navigate to the last page: nextPage absent, curPage > 1, no totals ->
+      // derived pages collapses to 1, but position must keep the wrapper shown.
+      const inst = root.__wfXano
+      w.fetch = () => makeRes({ items: [{ id: 3, title: 'C' }], curPage: 3 })
+      await inst.goToPage(3)
+      assert.ok(await waitFor(() => { const el = w.document.querySelector('[wf-xano-item] [wf-xano-bind="title"]'); return el && el.textContent === 'C' }), `${build} count-off navigated to last page`)
+      assert.equal(shell.style.display, '', `${build} count-off wrapper stays visible on last page (curPage > 1)`)
+      assert.equal(root.classList.contains('is-wf-xano-single-page'), false, `${build} count-off no single-page class past page 1`)
+      const prev = w.document.querySelector('[wf-xano-element="page-prev"]')
+      assert.equal(prev.classList.contains('is-disabled'), false, `${build} count-off prev button stays enabled on last page`)
+      // a genuine single page (curPage 1, one page) still hides
+      w.fetch = () => makeRes({ items: [{ id: 1, title: 'A' }], curPage: 1 })
+      await inst.goToPage(1)
+      assert.ok(await waitFor(() => shell.style.display === 'none'), `${build} count-off true single page still hides`)
+      assert.ok(root.classList.contains('is-wf-xano-single-page'), `${build} count-off single-page class set on true single page`)
+    }
+
     // append modes never reach the pagination renderer: wrapper + root class untouched
     {
       const w = new JSDOM(`<!doctype html><html><body>

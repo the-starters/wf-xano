@@ -249,6 +249,10 @@ that value is restored as the shown value, exactly as on `loader`/`empty`.
 
 Either grammar works: `wf-xano-element="pagination-wrapper"` or the legacy `wf-xano-pagination-wrapper` marker.
 
+The wrapper is only hidden on the **first** page: past page 1 it always stays visible so the prev
+button remains reachable — including on the last page of a count-disabled Xano endpoint (one that
+returns `curPage`/`nextPage` but no total), where the derived page count collapses to 1.
+
 The root also gets **`is-wf-xano-single-page`** whenever the result fits on one page — with or
 without a wrapper element — so you can style the single-page case in Webflow without hiding
 anything. Both the class and the wrapper toggle in **both** directions as filters widen or narrow

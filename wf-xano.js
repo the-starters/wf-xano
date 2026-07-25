@@ -2917,7 +2917,10 @@
     // may hold only prev/next, with no numbered template to clone. Pages
     // 0/undefined count as single so odd responses hide rather than strand
     // a one-page pager. Two-way, so a later result (filter change) re-shows.
-    var single = !(result.pages > 1)
+    // Never treated as single past page 1: count-disabled endpoints
+    // (nextPage/curPage only) collapse pages to 1 on the last page, so the
+    // prev button must stay reachable whenever curPage > 1.
+    var single = !(result.pages > 1 || result.page > 1)
     this.qa(elSel('pagination-wrapper')).forEach(function (el) {
       showStateEl(el, !single)
     })
