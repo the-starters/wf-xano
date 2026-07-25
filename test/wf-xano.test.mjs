@@ -3209,4 +3209,110 @@ const FULL_PAGE1 = {
   console.log('PASS 94: wf-xano-format truncate caps at word boundary with ellipsis')
 }
 
+// ---------- Test 95: pagination-wrapper auto-hides when there is only one page ----------
+{
+  const MIN = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'wf-xano.min.js'), 'utf8')
+  const wrapMarkup = (role, display = '') => `<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10">
+      <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+      <nav class="pager-shell" ${role} ${display}>
+        <a wf-xano-element="page-prev">prev</a>
+        <a wf-xano-element="page-number">1</a>
+        <a wf-xano-element="page-next">next</a>
+      </nav>
+    </div></body></html>`
+  const paged = (pages) => makeRes({ items: [{ id: 1, title: 'A' }], itemsTotal: pages * 10, curPage: 1, pageTotal: pages })
+
+  for (const build of ['wf-xano.js', 'wf-xano.min.js']) {
+    const lib = build === 'wf-xano.js' ? LIB : MIN
+
+    // (a) single page hides the wrapper; (f) root class on
+    {
+      const w = new JSDOM(wrapMarkup('wf-xano-element="pagination-wrapper"'), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(1)
+      w.eval(lib)
+      assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), `${build} rendered`)
+      assert.equal(w.document.querySelector('.pager-shell').style.display, 'none', `${build} wrapper hidden on single page`)
+      assert.ok(w.document.querySelector('[wf-xano-element="wrapper"]').classList.contains('is-wf-xano-single-page'), `${build} single-page root class set`)
+    }
+
+    // (b) multi page shows it; (f) root class off; (c) transitions both ways
+    {
+      const w = new JSDOM(wrapMarkup('wf-xano-element="pagination-wrapper"'), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(3)
+      w.eval(lib)
+      assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), `${build} rendered multi-page`)
+      const shell = w.document.querySelector('.pager-shell')
+      const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+      assert.equal(shell.style.display, '', `${build} wrapper visible with 3 pages`)
+      assert.equal(root.classList.contains('is-wf-xano-single-page'), false, `${build} no single-page class with 3 pages`)
+      // narrow to one page (e.g. a filter change)
+      const inst = root.__wfXano
+      w.fetch = () => paged(1)
+      await inst.refresh()
+      assert.ok(await waitFor(() => shell.style.display === 'none'), `${build} wrapper hides when result narrows to 1 page`)
+      assert.ok(root.classList.contains('is-wf-xano-single-page'), `${build} single-page class added on narrow`)
+      // widen back
+      w.fetch = () => paged(4)
+      await inst.refresh()
+      assert.ok(await waitFor(() => shell.style.display === ''), `${build} wrapper re-shows when result widens again`)
+      assert.equal(root.classList.contains('is-wf-xano-single-page'), false, `${build} single-page class cleared on widen`)
+    }
+
+    // (d) wf-xano-display supplies the shown value
+    {
+      const w = new JSDOM(wrapMarkup('wf-xano-element="pagination-wrapper"', 'wf-xano-display="flex"'), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(1)
+      w.eval(lib)
+      const shell = w.document.querySelector('.pager-shell')
+      assert.ok(await waitFor(() => shell.style.display === 'none'), `${build} display-wrapper hidden on single page`)
+      const inst = w.document.querySelector('[wf-xano-element="wrapper"]').__wfXano
+      w.fetch = () => paged(2)
+      await inst.refresh()
+      assert.ok(await waitFor(() => shell.style.display === 'flex'), `${build} wf-xano-display value restored as shown value`)
+    }
+
+    // (e) legacy marker grammar
+    {
+      const w = new JSDOM(wrapMarkup('wf-xano-pagination-wrapper'), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(1)
+      w.eval(lib)
+      assert.ok(await waitFor(() => w.document.querySelector('.pager-shell').style.display === 'none'), `${build} legacy wf-xano-pagination-wrapper honoured`)
+    }
+
+    // (g) no wrapper at all -> unchanged behaviour, no throw
+    {
+      const w = new JSDOM(wrapMarkup(''), { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(1)
+      w.eval(lib)
+      assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1), `${build} renders without a wrapper`)
+      assert.equal(w.document.querySelector('.pager-shell').style.display, '', `${build} unmarked pager untouched`)
+      assert.equal(w.document.querySelectorAll('[wf-xano-page-num]').length, 1, `${build} numbered buttons still render`)
+    }
+
+    // append modes never reach the pagination renderer: wrapper + root class untouched
+    {
+      const w = new JSDOM(`<!doctype html><html><body>
+        <div wf-xano-element="wrapper" wf-xano-source="g:p" wf-xano-auth="none" wf-xano-per-page="10" wf-xano-load="more">
+          <div wf-xano-element="template"><h3 wf-xano-bind="title"></h3></div>
+          <nav class="pager-shell" wf-xano-element="pagination-wrapper"><a wf-xano-element="page-next">next</a></nav>
+          <a wf-xano-element="load-more">Load more</a>
+        </div></body></html>`, { runScripts: 'outside-only' }).window
+      w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+      w.fetch = () => paged(1)
+      w.eval(lib)
+      const root = w.document.querySelector('[wf-xano-element="wrapper"]')
+      assert.ok(await waitFor(() => root.classList.contains('is-wf-xano-exhausted')), `${build} append mode reached exhausted state`)
+      assert.equal(w.document.querySelector('.pager-shell').style.display, '', `${build} append mode leaves pagination-wrapper untouched`)
+      assert.equal(root.classList.contains('is-wf-xano-single-page'), false, `${build} append mode never sets is-wf-xano-single-page`)
+    }
+  }
+  console.log('PASS 95: pagination-wrapper auto-hide (single page, transitions, display, legacy, source+min)')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

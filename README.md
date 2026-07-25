@@ -26,6 +26,12 @@ vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks 
 container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 `element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
+`wf-xano-element="pagination-wrapper"` (since v0.27.0) marks the element wrapping the whole
+pagination UI and hides it whenever the result fits on a single page, so a one-page result does not
+leave inert pager chrome behind. It honors `wf-xano-display` for the shown value, re-shows when a
+later result spans more pages, and pairs with the `is-wf-xano-single-page` root class for styling
+the single-page case without hiding anything.
+
 `wf-xano-format="truncate:<n>"` (since v0.26.0) hard-caps a bound string at n characters, trimmed
 to a word boundary with an ellipsis — for fields where runaway data breaks the card layout. Prefer
 CSS line-clamp when the goal is purely visual.
@@ -102,7 +108,8 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 - **Auth built in** — Memberstack JWT → Xano trade-token over a no-store POST body, cached and
   reset whenever the live session cookie changes.
 - **Full list UI from attributes** — binds (dot paths, date + name formatting), conditionals, links,
-  empty/loader/error states, totals + visible ranges, numbered pagination, filters (incl. checkbox
+  empty/loader/error states, totals + visible ranges, numbered pagination (with a
+  `pagination-wrapper` that hides itself on single-page results), filters (incl. checkbox
   groups), debounced search, sort.
 - **Designer-friendly** — instance keys let counts and controls live anywhere on the page; state
   classes (`is-wf-xano-loading/error/empty`) are styleable in Webflow; opt-in reactive text,
