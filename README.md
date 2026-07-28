@@ -26,6 +26,12 @@ vocabulary (since v0.4.0): `wrapper` is the scope root, `list` optionally marks 
 container. The legacy `wf-xano-list`/`wf-xano-template`/… markers and v0.3.0's
 `element="list"`-as-root (with `wf-xano-source`) still work as aliases.
 
+`wf-xano-defer="true"` (since v0.28.0) opts a wrapper out of the automatic boot sweep: it never
+constructs or fetches until page code activates it with `WfXano.init(rootEl)` (passing the deferred
+root itself as scope). Built for pages where an async gate — e.g. a Memberstack role check — decides
+which of several same-page feeds should run, so the wrong-role feed never fires a request. Mirrors
+Finsweet's `preventload` pattern.
+
 `wf-xano-element="pagination-wrapper"` (since v0.27.0) marks the element wrapping the whole
 pagination UI and hides it whenever the result fits on a single page, so a one-page result does not
 leave inert pager chrome behind. It honors `wf-xano-display` for the shown value, re-shows when a
