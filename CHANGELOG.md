@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.0 — 2026-07-28
+
+- New root setting `wf-xano-defer="true"`: the wrapper is skipped by the automatic boot sweep and
+  never constructs or fetches until page code activates it with `WfXano.init(rootEl)` (passing the
+  deferred root itself as scope). Built for pages where an async gate — e.g. a Memberstack role
+  check — decides which of several same-page feeds should run, so the wrong-role feed never fires
+  a request. Mirrors Finsweet's `preventload` pattern. Opt-in per wrapper; existing pages are
+  unaffected.
+
 ## v0.27.0 — 2026-07-25
 
 - New `wf-xano-element="pagination-wrapper"`: marks the element wrapping the whole pagination UI

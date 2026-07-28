@@ -3346,4 +3346,35 @@ const FULL_PAGE1 = {
   console.log('PASS 95: pagination-wrapper auto-hide (single page, transitions, display, legacy, source+min)')
 }
 
+// ---------- Test 96: wf-xano-defer roots skip boot, activate via WfXano.init(root) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div id="eager" wf-xano-element="wrapper" wf-xano-source="g:eager" wf-xano-auth="none">
+      <div wf-xano-element="template"><span wf-xano-bind="title"></span></div>
+    </div>
+    <div id="deferred" wf-xano-element="wrapper" wf-xano-source="g:deferred" wf-xano-auth="none" wf-xano-defer="true">
+      <div wf-xano-element="template"><span wf-xano-bind="title"></span></div>
+    </div>
+    <div id="not-deferred" wf-xano-element="wrapper" wf-xano-source="g:plain" wf-xano-auth="none" wf-xano-defer="false">
+      <div wf-xano-element="template"><span wf-xano-bind="title"></span></div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => { calls.push(url); return makeRes(PAGE([{ id: 1, title: 't' }], 1)) }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.WfXano.instances.length === 2), 'boot registers only non-deferred roots')
+  const deferred = w.document.querySelector('#deferred')
+  assert.equal(deferred.__wfXano, undefined, 'deferred root not constructed at boot')
+  assert.ok(!calls.some((u) => u.includes('deferred')), 'deferred source never fetched at boot')
+  assert.ok(calls.some((u) => u.includes('eager')), 'eager sibling fetched normally')
+  assert.ok(calls.some((u) => u.includes('plain')), 'wf-xano-defer="false" boots normally')
+  w.WfXano.init(deferred)
+  assert.ok(deferred.__wfXano, 'explicit init(root) activates a deferred root')
+  assert.ok(await waitFor(() => calls.some((u) => u.includes('deferred'))), 'deferred source fetches after activation')
+  assert.ok(await waitFor(() => deferred.querySelectorAll('[wf-xano-item]').length === 1), 'deferred list renders after activation')
+  console.log('PASS 96: wf-xano-defer skips boot and activates via WfXano.init(root)')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.27.0'
+  var VERSION = '0.28.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -3086,6 +3086,11 @@
     if (root.matches && root.matches(sel)) roots.unshift(root)
     roots.forEach(function (el) {
       if (el.__wfXano) return
+      // Deferred roots (wf-xano-defer="true") opt out of the automatic boot
+      // sweep — page code activates them later by passing the root itself to
+      // WfXano.init(rootEl) (e.g. after an async role gate decides which of
+      // several same-page feeds should run). Mirrors Finsweet's preventload.
+      if (el !== root && el.getAttribute('wf-xano-defer') === 'true') return
       if (!el.matches('[wf-xano-element="wrapper"], [wf-xano-wrapper]')) {
         log('deprecated root marker on', el, '— use wf-xano-element="wrapper"')
       }
