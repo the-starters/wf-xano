@@ -318,6 +318,7 @@ Add these to the elements above to tune behavior.
 | `wf-xano-url-sync` | `true` | — | Write page + declared filter/search/sort state to the query string (`<key>_page`, `<key>_<param>`) and restore it on load. Static `wf-xano-param-*` values are never serialized or overwritten from the URL. |
 | `wf-xano-param-<name>` | any value | — | Static request param, e.g. `wf-xano-param-status="Active"`. |
 | `wf-xano-refresh-on` | `favorite` | — | Re-fetch this list after a successful favorite toggle. Add `wf-xano-favorite-type` to scope it to one type. |
+| `wf-xano-defer` | `true` | — | Skip this wrapper during the automatic boot sweep; it never constructs or fetches until page code activates it with `WfXano.init(rootEl)` (root element as scope). For pages where an async gate (e.g. member role) decides which of several feeds should run. |
 
 ### On cards / controls
 

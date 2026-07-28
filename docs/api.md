@@ -26,7 +26,7 @@ script executes before **or** after the library loads (the same pattern as
 | `instances` | Array of live [`Instance`](#the-instance-object)s. |
 | `push(fn)` | Queue (pre-boot) or immediately run (post-boot) `fn(WfXano)`. |
 | `get(key)` | The instance whose `wf-xano-instance` equals `key`, or `null`. |
-| `init(scope?)` | Scan `scope` (including the scope element itself; default `document`) and initialize new wrappers. |
+| `init(scope?)` | Scan `scope` (including the scope element itself; default `document`) and initialize new wrappers. Wrappers with `wf-xano-defer="true"` are skipped unless they are the `scope` element itself — pass the deferred root directly to activate it. |
 | `refresh(rootEl?)` | Re-fetch every list, or just the one owning `rootEl`. |
 | `destroy(rootEl?)` | Tear down every list, or just the one owning `rootEl`. |
 | `audit(rootEl?)` | Compare legacy DOM/query projections with the reactive store using stable IDs and aggregate metadata only. Returns one report or an array. |
