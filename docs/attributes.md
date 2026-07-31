@@ -48,6 +48,32 @@ These work on any descendant of the template **and on the template root itself**
 | `wf-xano-link` | field name | Builds the `href` from the field value. Works when the card root is the `<a>` itself. Unsafe protocols such as `javascript:` and `data:` are rejected. |
 | `wf-xano-element="show-more"` | — | A clickable that expands a CSS-clamped text element by removing its clamp class (v0.13.0+). Works both inside list cards **and standalone on any page** — static CMS / detail pages, or content bound by another script such as opportunities-3.0.js (v0.14.0+). `wf-xano-target="<field>"` names the field to expand, matched against **both `wf-xano-bind` and `data-opp-bind`**; if it doesn't resolve (or is omitted) the target falls back to the nearest element carrying the `wf-xano-class` clamp class, then any bound element. `wf-xano-class="<class>"` is the clamp utility class removed while expanded and restored on collapse (e.g. `text-style-5lines`); on standalone pages the clamp class is what identifies the target. It accepts **multiple classes and `*` globs** (space-separated) — e.g. `text-style-*line*` strips every matching clamp on the target, so an element with both a desktop and a `-mob` clamp (`text-style-5lines text-style-2lines-mob`) fully expands on both breakpoints (v0.15.0+). Optional `wf-xano-expanded-text="Show less"` swaps the label while expanded — on composite buttons (label + icon children) mark the label child with `wf-xano-element="show-more-text"` so the swap writes there and icons survive (v0.13.1+). Mark icon children with `wf-xano-element="show-more-icon"` to have `is-wf-xano-expanded` toggled on them too — style the rotated state as a combo class on the icon itself (v0.13.2+). While expanded, `is-wf-xano-expanded` is set on the control and the target. Controls whose target isn't actually clamped (short text) are hidden automatically. Clicks don't bubble, so the control is safe inside `wf-xano-link` card anchors. Call `WfXano.initShowMore(scope?)` to re-wire after async content binding. |
 
+### Nested lists (v0.29.0)
+
+A port of Finsweet's list `nest-target`, adapted to data-driven rows: a wf-xano row already carries
+its child array (a Xano addon/join or composed response), so there is no second fetch or slug
+matching. Mark a container inside the template with `wf-xano-element="nest-target"` +
+`wf-xano-field="<array path>"` to render that row's child array as a nested list. A `nest-target` is
+its own binding scope — wrapper-level scans (binds, ifs, forms, cards, controls) stop at it, so its
+raw nested template is never bound with the outer row's data.
+
+```html
+<div wf-xano-element="nest-target" wf-xano-field="invoices">
+  <div wf-xano-element="nest-template">
+    <span wf-xano-bind="amount" wf-xano-prefix="$"></span>
+    <span wf-xano-if="status === 'paid'">Paid</span>
+    <a wf-xano-link="payment_link">View invoice</a>
+  </div>
+  <div wf-xano-element="nest-empty">No invoices yet.</div>
+</div>
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `wf-xano-element="nest-target"` | ✅ | Container inside a card whose child array is rendered as a nested list. `wf-xano-field="<array path>"` names the array on the row (dot paths allowed). Deeper `nest-target`s belong to their own nested rows and recurse. |
+| `wf-xano-element="nest-template"` | — | The row template cloned once per array entry; the original stays hidden. Binds/ifs/links/srcs inside it resolve against each sub-item with full card semantics. Without an explicit marker, the first element child that isn't the empty state is used — mark it explicitly to get the FOUC guard. Re-renders are idempotent (prior clones are swept first). |
+| `wf-xano-element="nest-empty"` | — | Shown when the array is empty, hidden otherwise. |
+
 ### Counts
 
 | Attribute | Description |

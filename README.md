@@ -56,7 +56,7 @@ per-project invoices:
 ```html
 <div wf-xano-element="nest-target" wf-xano-field="invoices">
   <div wf-xano-element="nest-template">
-    <span wf-xano-bind="amount" wf-xano-format="money"></span>
+    <span wf-xano-bind="amount" wf-xano-prefix="$"></span>
     <span wf-xano-if="status === 'paid'">Paid</span>
     <a wf-xano-link="payment_link">View invoice</a>
   </div>
