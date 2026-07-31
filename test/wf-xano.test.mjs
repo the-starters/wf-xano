@@ -3377,4 +3377,90 @@ const FULL_PAGE1 = {
   console.log('PASS 96: wf-xano-defer skips boot and activates via WfXano.init(root)')
 }
 
+// ---------- Test 97: nest-target renders a row's child array with full bind semantics ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="opp30:starter/projects/mine" wf-xano-auth="none">
+      <div wf-xano-element="template">
+        <h3 wf-xano-bind="title"></h3>
+        <span class="paid-count" wf-xano-bind="invoices_paid"></span>
+        <div wf-xano-element="nest-target" wf-xano-field="invoices">
+          <div wf-xano-element="nest-template">
+            <span class="inv-ref" wf-xano-bind="stripe_ref"></span>
+            <span class="inv-title" wf-xano-bind="title" wf-xano-default="(no title)"></span>
+            <span class="inv-paid" wf-xano-if="status === 'paid'">Paid</span>
+            <a class="inv-link" wf-xano-link="payment_link"></a>
+          </div>
+          <div wf-xano-element="nest-empty">No invoices yet.</div>
+        </div>
+      </div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  const DATA = {
+    items: [
+      {
+        id: 1, title: 'Platform growth', invoices_paid: 1,
+        invoices: [
+          { stripe_ref: 'in_A', status: 'paid', payment_link: 'https://buy.stripe.com/a' },
+          { stripe_ref: 'plink_B', status: 'unpaid', payment_link: 'https://buy.stripe.com/b' },
+        ],
+      },
+      { id: 2, title: 'Empty project', invoices_paid: 0, invoices: [] },
+    ],
+    itemsTotal: 2, curPage: 1, pageTotal: 1,
+  }
+  w.fetch = () => makeRes(DATA)
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'two project cards')
+  const cards = w.document.querySelectorAll('[wf-xano-item]')
+
+  const clones0 = cards[0].querySelectorAll('[data-wf-xano-nest-clone]')
+  assert.equal(clones0.length, 2, 'two invoice rows in first card')
+  assert.equal(clones0[0].querySelector('.inv-ref').textContent, 'in_A')
+  assert.equal(clones0[1].querySelector('.inv-ref').textContent, 'plink_B')
+  assert.equal(clones0[0].querySelector('.inv-title').textContent, '(no title)',
+    'nested bind resolves against the SUB-item — outer title must not leak in')
+  assert.equal(clones0[0].querySelector('.inv-paid').style.display, '', 'paid pill visible on paid row')
+  assert.equal(clones0[1].querySelector('.inv-paid').style.display, 'none', 'paid pill hidden on unpaid row')
+  assert.equal(clones0[0].querySelector('.inv-link').getAttribute('href'), 'https://buy.stripe.com/a')
+  assert.equal(cards[0].querySelector('[wf-xano-element="nest-template"]').style.display, 'none', 'raw nested template stays hidden')
+  assert.equal(cards[0].querySelector('[wf-xano-element="nest-empty"]').style.display, 'none', 'nest empty hidden when rows exist')
+  assert.equal(cards[0].querySelector('.paid-count').textContent, '1', 'outer binds still work beside a nest')
+
+  const clones1 = cards[1].querySelectorAll('[data-wf-xano-nest-clone]')
+  assert.equal(clones1.length, 0, 'no invoice rows in empty card')
+  assert.equal(cards[1].querySelector('[wf-xano-element="nest-empty"]').style.display, '', 'nest empty visible when array empty')
+
+  // Idempotent re-render: refresh must not duplicate nested clones.
+  w.WfXano.instances[0].refresh()
+  assert.ok(await waitFor(() => {
+    const c = w.document.querySelectorAll('[wf-xano-item]')
+    return c.length === 2 && c[0].querySelectorAll('[data-wf-xano-nest-clone]').length === 2
+  }), 'refresh keeps exactly two nested clones (no duplication)')
+  console.log('PASS 97: nest-target renders child arrays with scoped binds, ifs, links, empty state')
+}
+
+// ---------- Test 98: nest-target fallback template (first element child) ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="template">
+        <div wf-xano-element="nest-target" wf-xano-field="tags">
+          <span class="tag" wf-xano-bind="label"></span>
+          <div wf-xano-element="nest-empty">no tags</div>
+        </div>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 9, tags: [{ label: 'a' }, { label: 'b' }, { label: 'c' }] }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[data-wf-xano-nest-clone]').length === 3), 'three tag rows from fallback template')
+  const labels = [...w.document.querySelectorAll('[data-wf-xano-nest-clone]')].map((el) => el.textContent)
+  assert.deepEqual(labels, ['a', 'b', 'c'], 'fallback template binds each sub-item')
+  console.log('PASS 98: nest-target fallback first-child template')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

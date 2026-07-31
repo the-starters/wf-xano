@@ -46,6 +46,24 @@ CSS line-clamp when the goal is purely visual.
 (since v0.25.0) to render any other field from the raw response body instead — for server-computed
 stats returned alongside the list (e.g. `available_matching_total`).
 
+`wf-xano-element="nest-target"` + `wf-xano-field="<array path>"` (since v0.29.0) renders a row's
+child array as a nested list — one `wf-xano-element="nest-template"` clone per entry, with
+binds/ifs/links resolving against each sub-item and `wf-xano-element="nest-empty"` shown when the
+array is empty. A port of Finsweet's list `nest-target` adapted to data-driven rows: the row
+already carries the child array (Xano addon/join), so no second fetch or slug matching. Example —
+per-project invoices:
+
+```html
+<div wf-xano-element="nest-target" wf-xano-field="invoices">
+  <div wf-xano-element="nest-template">
+    <span wf-xano-bind="amount" wf-xano-prefix="$"></span>
+    <span wf-xano-if="status === 'paid'">Paid</span>
+    <a wf-xano-link="payment_link">View invoice</a>
+  </div>
+  <div wf-xano-element="nest-empty">No invoices yet.</div>
+</div>
+```
+
 `wf-xano-element="delete"` (since v0.24.0) marks Designer placeholder elements for removal: they
 are hidden by the FOUC guard and removed from the DOM at boot, anywhere on the page. Use it on the
 duplicate static cards kept next to a template for visual editing, instead of deleting them by hand

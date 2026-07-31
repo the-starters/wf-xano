@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.29.0 — 2026-07-31
+
+- New nested-list grammar (port of Finsweet's list `nest-target`, adapted to data-driven rows —
+  a wf-xano row already carries its child array via a Xano addon/join, so there is no second
+  fetch or slug matching): `wf-xano-element="nest-target"` + `wf-xano-field="<array path>"` on a
+  container inside the template renders one `wf-xano-element="nest-template"` clone per array
+  entry (falls back to the first element child that isn't the empty state; the explicit marker
+  gets the FOUC guard). Binds/ifs/links/srcs inside the nested template resolve against each
+  sub-item with full card semantics, `wf-xano-element="nest-empty"` shows when the array is
+  empty, re-renders are idempotent, and nest-in-nest recurses. Built for the Starter Dashboard
+  Projects tile (per-project invoice rows from `starter/projects/mine`).
+- Scoping: a `nest-target` is now a binding scope like a list wrapper — wrapper-level scans
+  (binds, conditionals, forms, cards, controls) no longer reach inside it, so raw nested
+  templates can never be bound with the outer row's data.
+
 ## v0.28.0 — 2026-07-28
 
 - New root setting `wf-xano-defer="true"`: the wrapper is skipped by the automatic boot sweep and
