@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.28.0'
+  var VERSION = '0.29.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -94,7 +94,7 @@
   try {
     var foucStyle = document.createElement('style')
     foucStyle.textContent =
-      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="tag"],[wf-xano-element="page-dots"],[wf-xano-element="delete"]{display:none!important}'
+      '[wf-xano-element="template"],[wf-xano-template],[wf-xano-element="nest-template"],[wf-xano-element="tag"],[wf-xano-element="page-dots"],[wf-xano-element="delete"]{display:none!important}'
     ;(document.head || document.documentElement).appendChild(foucStyle)
   } catch (e) {
     /* non-fatal */
@@ -201,9 +201,13 @@
       })
   }
 
-  /** Nearest list wrapper, used to keep nested instances isolated. */
+  /** Nearest binding scope, used to keep nested instances isolated. A scope
+   *  is a list wrapper OR a nest-target (nested array container): everything
+   *  inside a nest-target belongs to the nested rows, so wrapper-level scans
+   *  (binds, forms, cards, controls) must not reach into it. */
+  var SCOPE_SEL = ROOT_SEL + ', [wf-xano-element="nest-target"]'
   function ownerRoot(el) {
-    return el && el.closest ? el.closest(ROOT_SEL) : null
+    return el && el.closest ? el.closest(SCOPE_SEL) : null
   }
 
   function positiveInt(value, fallback, allowZero) {
@@ -916,6 +920,75 @@
         }
       }
     })
+    // nested arrays: each nest-target whose nearest enclosing scope is THIS
+    // card renders the row's child array (deeper targets belong to their own
+    // nested rows and are handled by renderNest's recursive fillCard).
+    qaWithRoot(card, '[wf-xano-element="nest-target"]').filter(function (el) {
+      return el !== card && ownerRoot(el.parentElement) === ownerRoot(card)
+    }).forEach(function (el) {
+      renderNest(el, item)
+    })
+  }
+
+  /* --------------------------- nested lists --------------------------- */
+  /** Port of Finsweet's list `nest-target` adapted to data-driven rows: a
+   *  wf-xano row already carries its child array (Xano addon/join or a
+   *  composed response), so there is no second fetch or slug matching.
+   *
+   *    <div wf-xano-element="nest-target" wf-xano-field="invoices">
+   *      <div wf-xano-element="nest-template">
+   *        <span wf-xano-bind="amount" wf-xano-format="money"></span>
+   *        <span wf-xano-if="status === 'paid'">Paid</span>
+   *      </div>
+   *      <div wf-xano-element="nest-empty">No invoices yet.</div>
+   *    </div>
+   *
+   *  Binds/ifs/links/srcs inside the nested template resolve against each
+   *  array entry with full fillCard semantics (nest-in-nest recurses).
+   *  Without an explicit nest-template marker, the first element child that
+   *  is not the empty state is used — mark it explicitly to get the FOUC
+   *  guard. Re-renders are idempotent: prior clones are swept first. */
+  function renderNest(target, item) {
+    var field = target.getAttribute('wf-xano-field')
+    if (!field) {
+      log('nest-target missing wf-xano-field', target)
+      return
+    }
+    var tpl = target.__wfXanoNestTpl
+    if (!tpl) {
+      tpl = q(target, '[wf-xano-element="nest-template"]')
+      if (!tpl) {
+        tpl = Array.prototype.filter.call(target.children, function (child) {
+          return !child.matches('[wf-xano-element="nest-empty"]')
+        })[0]
+      }
+      if (!tpl) return
+      target.__wfXanoNestTpl = tpl
+      tpl.style.display = 'none'
+    }
+    // Sweep only THIS level's clones — a nested nest-target's clones live
+    // inside their own target and are re-rendered by their own pass.
+    qa(target, '[data-wf-xano-nest-clone]')
+      .filter(function (el) {
+        return el.parentNode === target
+      })
+      .forEach(function (el) {
+        el.remove()
+      })
+    var rows = get(item, field)
+    if (!Array.isArray(rows)) rows = rows == null ? [] : [rows]
+    var empty = qaWithRoot(target, '[wf-xano-element="nest-empty"]').filter(function (el) {
+      return el !== target && ownerRoot(el.parentElement) === target
+    })[0]
+    rows.forEach(function (row) {
+      var clone = tpl.cloneNode(true)
+      clone.removeAttribute('wf-xano-element')
+      clone.setAttribute('data-wf-xano-nest-clone', '')
+      clone.style.display = ''
+      target.insertBefore(clone, empty && empty.parentNode === target ? empty : null)
+      fillCard(clone, row)
+    })
+    if (empty) empty.style.display = rows.length ? 'none' : ''
   }
 
   /** "Show more" toggle: a clickable that expands a clamped text element (a
