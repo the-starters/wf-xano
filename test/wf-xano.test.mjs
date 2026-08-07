@@ -3463,4 +3463,106 @@ const FULL_PAGE1 = {
   console.log('PASS 98: nest-target fallback first-child template')
 }
 
+
+// ---------- Test 99: details-toggle disclosure — per-card panels, closed-state class, independence ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="list">
+        <div wf-xano-element="template">
+          <h3 wf-xano-bind="title"></h3>
+          <div wf-xano-element="nest-target" wf-xano-field="children">
+            <div wf-xano-element="nest-template">
+              <div class="nested-panel is-inactive" wf-xano-element="details-target"></div>
+            </div>
+          </div>
+          <button wf-xano-element="details-toggle" wf-xano-class="is-inactive" wf-xano-expanded-text="Hide details">Project Details</button>
+          <div class="details-mask is-inactive" wf-xano-element="details-target"><span wf-xano-bind="detail"></span></div>
+        </div>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, title: 'A', detail: 'da', children: [{}] }, { id: 2, title: 'B', detail: 'db', children: [{}] }], 2))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'two cards rendered')
+  const cards = [...w.document.querySelectorAll('[wf-xano-item]')]
+  const btn0 = cards[0].querySelector('[wf-xano-element="details-toggle"]')
+  const panel0 = cards[0].querySelector('.details-mask')
+  const panel1 = cards[1].querySelector('.details-mask')
+  assert.ok(panel0 && panel1, 'each card clones its own panel')
+  assert.equal(panel0.querySelector('[wf-xano-bind="detail"]').textContent, 'da', 'panel binds its own record')
+  assert.equal(panel1.querySelector('[wf-xano-bind="detail"]').textContent, 'db', 'second panel binds the second record')
+  assert.ok(panel0.classList.contains('is-inactive'), 'panel starts closed')
+  assert.equal(btn0.getAttribute('aria-expanded'), 'false', 'trigger starts collapsed')
+  assert.equal(panel0.getAttribute('aria-hidden'), 'true', 'panel starts aria-hidden')
+  btn0.click()
+  assert.ok(!panel0.classList.contains('is-inactive'), 'closed class removed on open')
+  assert.ok(panel0.classList.contains('is-wf-xano-expanded'), 'target marked expanded')
+  assert.ok(btn0.classList.contains('is-wf-xano-expanded'), 'control marked expanded')
+  assert.ok(cards[0].querySelector('.nested-panel').classList.contains('is-inactive'), 'nested-scope panel is not selected')
+  assert.equal(btn0.getAttribute('aria-expanded'), 'true', 'aria-expanded mirrors open')
+  assert.equal(btn0.textContent, 'Hide details', 'label swapped while open')
+  assert.ok(panel1.classList.contains('is-inactive'), 'other card panel stays closed (independent)')
+  btn0.click()
+  assert.ok(panel0.classList.contains('is-inactive'), 'closed class restored on close')
+  assert.ok(!panel0.classList.contains('is-wf-xano-expanded'), 'expanded state cleared')
+  assert.equal(btn0.textContent, 'Project Details', 'label restored')
+
+  const rootDom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="list">
+        <button wf-xano-template wf-xano-element="details-toggle" class="root-toggle" wf-xano-class="is-inactive">Project Details</button>
+        <div class="shared-panel is-inactive" wf-xano-element="details-target">shared</div>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const rw = rootDom.window
+  rw.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  rw.fetch = () => makeRes(PAGE([{ id: 1 }], 1))
+  rw.eval(LIB)
+  assert.ok(await waitFor(() => rw.document.querySelector('[wf-xano-item]')), 'trigger-root card rendered')
+  const rootToggle = rw.document.querySelector('[wf-xano-item]')
+  const sharedPanel = rw.document.querySelector('.shared-panel')
+  rootToggle.click()
+  assert.ok(sharedPanel.classList.contains('is-inactive'), 'trigger-root card cannot bind an outside shared panel')
+  assert.equal(rootToggle.hasAttribute('aria-expanded'), false, 'unresolved trigger-root card is not wired')
+  console.log('PASS 99: details-toggle — per-card panels, closed-state class, independence')
+}
+
+// ---------- Test 99b: details-toggle defaults — unauthored class added, standalone wiring, composite icon ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section>
+      <div class="is-wf-xano-expanded" wf-xano-element="details-toggle">
+        <div wf-xano-element="details-toggle-text">Show</div>
+        <svg class="chev is-wf-xano-expanded" wf-xano-element="details-toggle-icon"></svg>
+      </div>
+      <div class="panel is-wf-xano-expanded" wf-xano-element="details-target">standalone details</div>
+    </section></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([], 0))
+  w.eval(LIB)
+  const btn = w.document.querySelector('[wf-xano-element="details-toggle"]')
+  const panel = w.document.querySelector('[wf-xano-element="details-target"]')
+  assert.ok(await waitFor(() => panel.classList.contains('is-inactive')), 'default is-inactive added when unauthored (post-boot)')
+  assert.equal(panel.getAttribute('aria-hidden'), 'true', 'panel starts aria-hidden')
+  const icon = btn.querySelector('svg.chev')
+  assert.ok(!btn.classList.contains('is-wf-xano-expanded'), 'authored expanded control state stripped on wire')
+  assert.ok(!panel.classList.contains('is-wf-xano-expanded'), 'authored expanded target state stripped on wire')
+  assert.ok(!icon.classList.contains('is-wf-xano-expanded'), 'authored expanded icon state stripped on wire')
+  btn.click()
+  assert.ok(!panel.classList.contains('is-inactive'), 'standalone toggle opens')
+  assert.equal(panel.getAttribute('aria-hidden'), 'false', 'aria-hidden mirrors open')
+  assert.ok(icon.classList.contains('is-wf-xano-expanded'), 'details-toggle-icon gets the expanded class')
+  assert.equal(btn.querySelector('[wf-xano-element="details-toggle-text"]').textContent, 'Show', 'label untouched without expanded-text')
+  // clicking the icon child bubbles to the control
+  btn.click()
+  assert.ok(panel.classList.contains('is-inactive'), 'default class restored on close')
+  assert.ok(!icon.classList.contains('is-wf-xano-expanded'), 'icon expanded class cleared on close')
+  icon.dispatchEvent(new w.Event('click', { bubbles: true }))
+  assert.ok(!panel.classList.contains('is-inactive'), 'click on icon child toggles too')
+  console.log('PASS 99b: details-toggle — default is-inactive, standalone wiring, composite icon')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

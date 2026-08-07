@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.29.0'
+  var VERSION = '0.30.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1211,6 +1211,137 @@
     }
     setTimeout(prune, 0)
     setTimeout(prune, 600)
+  }
+
+  /** "Details toggle": a per-card disclosure — a trigger that opens/closes a
+   *  details panel by removing/restoring the panel's closed-state class(es).
+   *  Finsweet Accordion's trigger/content/active-class model, in the show-more
+   *  dialect (same wf-xano-class semantics, same -text/-icon markers):
+   *
+   *    <button wf-xano-element="details-toggle"
+   *            wf-xano-class="is-inactive"            (closed-state class(es) on
+   *                                                    the target: removed while
+   *                                                    open, restored on close;
+   *                                                    default "is-inactive";
+   *                                                    space-separated, `*` globs)
+   *            wf-xano-expanded-text="Hide details">  (optional label swap)
+   *      Project Details</button>
+   *    <div wf-xano-element="details-target" class="details-mask is-inactive">…</div>
+   *
+   *  Unlike show-more (a clamp expander that hides itself when the text turns
+   *  out short), a details toggle is always visible and always starts CLOSED:
+   *  wiring adds the closed class when the Designer element doesn't already
+   *  carry it (exact names only — a glob can strip authored variants, not
+   *  invent them). While open, `is-wf-xano-expanded` is set on the control,
+   *  the target, and any wf-xano-element="details-toggle-icon" descendants
+   *  (combo-class the rotated chevron on the icon itself); the label swap
+   *  writes to a wf-xano-element="details-toggle-text" child when present;
+   *  state also mirrors through aria-expanded on the control and aria-hidden
+   *  on the target. Target resolution walks up from the control picking the
+   *  nearest wf-xano-element="details-target" — bounded by the card in a list
+   *  (the panel must live INSIDE the template so every record clones its own),
+   *  by <body> standalone. Clicks never bubble: cards are commonly wrapped in
+   *  wf-xano-link anchors. */
+  function resolveDetailsTarget(btn, boundary) {
+    var bindingScope = ownerRoot(btn)
+    var buttonCard = btn.closest('[wf-xano-item]')
+    var scope = btn.parentElement
+    while (scope) {
+      if (boundary && scope !== boundary && !boundary.contains(scope)) break
+      var matches = qa(scope, elSel('details-target')).filter(function (target) {
+        if (ownerRoot(target) !== bindingScope) return false
+        var targetCard = target.closest('[wf-xano-item]')
+        return !targetCard || targetCard === buttonCard || targetCard.contains(btn)
+      })
+      var t = nearestToButton(matches, btn)
+      if (t) return t
+      if (scope === boundary || scope === document.body) break
+      scope = scope.parentElement
+    }
+    return null
+  }
+
+  /** Attach the disclosure behavior once. @param {Element} btn @param {Element} target */
+  function wireDetailsToggleButton(btn, target) {
+    if (btn.__wfXanoDetailsToggle) return
+    btn.__wfXanoDetailsToggle = true
+    var spec = btn.getAttribute('wf-xano-class') || 'is-inactive'
+    var matchClosed = clampMatcher(spec)
+    var exact = spec
+      .trim()
+      .split(/\s+/)
+      .filter(function (tok) {
+        return tok && tok.indexOf('*') === -1
+      })
+    var labelEl = q(btn, '[wf-xano-element="details-toggle-text"]') || btn
+    var icons = qa(btn, '[wf-xano-element="details-toggle-icon"]')
+    var openLabel = labelEl.textContent
+    var closeLabel = btn.getAttribute('wf-xano-expanded-text')
+    var apply = function (expanded) {
+      btn.classList.toggle('is-wf-xano-expanded', expanded)
+      target.classList.toggle('is-wf-xano-expanded', expanded)
+      icons.forEach(function (icon) {
+        icon.classList.toggle('is-wf-xano-expanded', expanded)
+      })
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      target.setAttribute('aria-hidden', expanded ? 'false' : 'true')
+      if (expanded) {
+        // Strip EVERY authored class matching the spec (desktop + `-mob`
+        // variants both come off), remembering them for the close.
+        var stripped = Array.prototype.filter.call(target.classList, matchClosed)
+        stripped.forEach(function (c) {
+          target.classList.remove(c)
+        })
+        target.__wfXanoClosed = stripped.length ? stripped : exact
+      } else {
+        ;(target.__wfXanoClosed || exact).forEach(function (c) {
+          target.classList.add(c)
+        })
+      }
+      if (closeLabel) labelEl.textContent = expanded ? closeLabel : openLabel
+    }
+    // Details panels always start closed — add the closed class when the
+    // Designer element doesn't already carry it.
+    if (!someClass(target, matchClosed)) {
+      exact.forEach(function (c) {
+        target.classList.add(c)
+      })
+    }
+    apply(false)
+    btn.addEventListener('click', function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      apply(someClass(target, matchClosed)) // closed now → open it
+    })
+  }
+
+  /** Wire every details-toggle inside a rendered list card (target search
+   *  bounded by the card). @param {Element} card */
+  function wireDetailsToggle(card) {
+    qaWithRoot(card, elSel('details-toggle')).forEach(function (btn) {
+      var target = resolveDetailsTarget(btn, card)
+      if (!target) {
+        log('details-toggle: no target found', btn)
+        return
+      }
+      wireDetailsToggleButton(btn, target)
+    })
+  }
+
+  /** Standalone details-toggle for pages with no wf-xano list (or content bound
+   *  by another script). Controls inside a list card/template are handled by
+   *  render(). @param {ParentNode} [scope] */
+  function initDetailsToggle(scope) {
+    var root = scope || document
+    qa(root, elSel('details-toggle')).forEach(function (btn) {
+      if (btn.closest('[wf-xano-item], [wf-xano-element="template"], [wf-xano-template]')) return
+      var target = resolveDetailsTarget(btn, null)
+      if (!target) {
+        log('details-toggle (standalone): no target found', btn)
+        return
+      }
+      wireDetailsToggleButton(btn, target)
+    })
   }
 
   /** Read a filter control's effective value. Checkbox GROUPS combine all
@@ -2858,6 +2989,7 @@
       if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
       fillCard(card, item)
       wireShowMore(card)
+      wireDetailsToggle(card)
       if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
         list.insertBefore(card, self._infiniteSentinel)
       } else list.appendChild(card)
@@ -2947,6 +3079,7 @@
         card.style.display = ''
         fillCard(card, item, false)
         wireShowMore(card)
+        wireDetailsToggle(card)
         appended.push(card)
       }
       ordered.push(card)
@@ -3189,6 +3322,7 @@
     _booted = true
     init(document)
     initShowMore(document)
+    initDetailsToggle(document)
     initFavorites(document)
     _pendingCallbacks.splice(0).forEach(runCallback)
   }
@@ -3218,6 +3352,9 @@
     /** (Re)wire standalone show-more controls (non-list pages, or after another
      *  script binds content). Optional scope; defaults to the whole document. */
     initShowMore: initShowMore,
+    /** (Re)wire standalone details-toggle disclosures (non-list pages, or after
+     *  another script binds content). Optional scope; defaults to the document. */
+    initDetailsToggle: initDetailsToggle,
     favorites: {
       /** Wire favorite controls added by another renderer. */
       init: initFavorites,

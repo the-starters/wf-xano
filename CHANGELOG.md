@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.30.0 — 2026-08-07
+
+- New `details-toggle` / `details-target` disclosure grammar, with per-card and standalone wiring.
+  See the [attribute reference](docs/attributes.md) for the markup and state contract.
+
 ## v0.29.0 — 2026-07-31
 
 - New nested-list grammar (port of Finsweet's list `nest-target`, adapted to data-driven rows —
