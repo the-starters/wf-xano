@@ -1243,9 +1243,17 @@
    *  by <body> standalone. Clicks never bubble: cards are commonly wrapped in
    *  wf-xano-link anchors. */
   function resolveDetailsTarget(btn, boundary) {
+    var bindingScope = ownerRoot(btn)
+    var buttonCard = btn.closest('[wf-xano-item]')
     var scope = btn.parentElement
     while (scope) {
-      var t = nearestToButton(qa(scope, elSel('details-target')), btn)
+      if (boundary && scope !== boundary && !boundary.contains(scope)) break
+      var matches = qa(scope, elSel('details-target')).filter(function (target) {
+        if (ownerRoot(target) !== bindingScope) return false
+        var targetCard = target.closest('[wf-xano-item]')
+        return !targetCard || targetCard === buttonCard || targetCard.contains(btn)
+      })
+      var t = nearestToButton(matches, btn)
       if (t) return t
       if (scope === boundary || scope === document.body) break
       scope = scope.parentElement
@@ -1299,8 +1307,7 @@
         target.classList.add(c)
       })
     }
-    btn.setAttribute('aria-expanded', 'false')
-    target.setAttribute('aria-hidden', 'true')
+    apply(false)
     btn.addEventListener('click', function (e) {
       e.preventDefault()
       e.stopPropagation()
