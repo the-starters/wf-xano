@@ -2,17 +2,8 @@
 
 ## v0.30.0 — 2026-08-07
 
-- New disclosure grammar `wf-xano-element="details-toggle"` / `wf-xano-element="details-target"`
-  (Finsweet Accordion's trigger/content/active-class model, in the show-more dialect): the trigger
-  opens/closes the nearest details panel by removing/restoring the panel's closed-state class(es)
-  named by `wf-xano-class` (default `is-inactive`; space-separated names + `*` globs). Panels
-  always start closed — wiring adds the class when the Designer element doesn't carry it. While
-  open, `is-wf-xano-expanded` is set on the control, target, and `details-toggle-icon` children;
-  `wf-xano-expanded-text` swaps labels (composite buttons via `details-toggle-text`); state
-  mirrors through `aria-expanded`/`aria-hidden`. Wires per-card inside list templates (each
-  record clones its own panel, bounded by the card) and standalone via
-  `WfXano.initDetailsToggle(scope?)`. Built for the Brand/Starter Dashboard Projects tiles'
-  "Project Details" reveal, replacing the on-canvas `view-details`/`is-open` embed.
+- New `details-toggle` / `details-target` disclosure grammar, with per-card and standalone wiring.
+  See the [attribute reference](docs/attributes.md) for the markup and state contract.
 
 ## v0.29.0 — 2026-07-31
 
