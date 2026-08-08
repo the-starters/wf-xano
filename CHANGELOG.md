@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.31.0 — 2026-08-08
+
+- New opt-in `wf-xano-filter-mode="local"` for small, complete authorized collections. One
+  canonical Xano response renders a stable keyed card set; declared `wf-xano-filter` controls then
+  switch visibility instantly without sending filter values back to Xano. Remote filtering remains
+  the default, and search/sort remain remote in either mode.
+- New `wf-xano-revalidate-focus="<seconds>"` freshness policy for local lists. A stale snapshot
+  re-fetches when the tab becomes active, while explicit refreshes, successful mutation/form
+  invalidations, and auth changes continue to converge immediately on Xano.
+- Local mode exposes only the visible projection in reactive `state.data`, with canonical/visible
+  totals and the last successful fetch time in `state.local`.
+- Local lists revalidate after successful optimistic item mutations and reject local filter fields
+  that collide with server-owned search or sort parameters.
+
 ## v0.30.0 — 2026-08-07
 
 - New `details-toggle` / `details-target` disclosure grammar, with per-card and standalone wiring.

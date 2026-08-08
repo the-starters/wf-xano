@@ -128,6 +128,9 @@ ready-made Webflow structures (Embed snippets, native paste-into-Designer compon
 ## Highlights
 
 - **Always fresh** — every request uses `cache: 'no-store'`; Xano is the source of truth.
+- **Fast local facets when explicitly safe** — `wf-xano-filter-mode="local"` keeps one complete,
+  authorized response in page memory for instant status switching, with optional bounded focus
+  revalidation. Remote filtering remains the default.
 - **Race-safe** — overlapping requests are sequenced; a stale response never renders over a newer one.
 - **Auth built in** — Memberstack JWT → Xano trade-token over a no-store POST body, cached and
   reset whenever the live session cookie changes.

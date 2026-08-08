@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.30.0'
+  var VERSION = '0.31.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1405,6 +1405,9 @@
       }
       if (!instance.url) formOnly.push(instance)
       instance._lastResult = null
+      instance._canonicalItems = []
+      instance._lastSuccessAt = 0
+      instance._lastRevalidateAttemptAt = 0
       instance.page = 1
       if (instance.template) {
         qa(instance.listEl || instance.template.parentNode, '[wf-xano-item]').forEach(function (card) {
@@ -1419,6 +1422,10 @@
           status: 'loading',
           data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
           query: { params: Object.assign({}, instance.params), page: instance.page, perPage: instance.perPage },
+          local:
+            instance.filterMode === 'local'
+              ? { mode: 'local', canonicalTotal: 0, visibleTotal: 0, lastSuccessAt: 0 }
+              : {},
           error: null,
         },
         'auth:change',
@@ -1466,6 +1473,15 @@
     this.urlSync = root.getAttribute('wf-xano-url-sync') === 'true'
     this.keyField = String(root.getAttribute('wf-xano-key') || 'id').trim() || 'id'
     this.keyed = root.getAttribute('wf-xano-reconcile') === 'keyed'
+    // Remote remains the safe default: a generic endpoint may be paginated or
+    // freshness-sensitive. `local` is an explicit assertion that the first
+    // response contains the complete authorized collection. Its filters are
+    // applied to the in-page snapshot and never enter the Xano request body.
+    this.filterMode = String(root.getAttribute('wf-xano-filter-mode') || 'remote').toLowerCase()
+    if (['remote', 'local'].indexOf(this.filterMode) === -1) this.filterMode = 'remote'
+    this.revalidateFocusMs =
+      positiveInt(root.getAttribute('wf-xano-revalidate-focus'), 0, true) * 1000
+    if (this.filterMode === 'local') this.keyed = true
     this.page = 1
     this.params = this.readStaticParams()
     // Baseline for clearParams()/tag chips: static wf-xano-param-* values
@@ -1493,6 +1509,9 @@
     this._seq = 0
     this._pages = 1
     this._lastResult = null
+    this._canonicalItems = []
+    this._lastSuccessAt = 0
+    this._lastRevalidateAttemptAt = 0
     this._subscribers = []
     this._projectionScheduled = false
     this._destroyed = false
@@ -1503,7 +1522,10 @@
       status: 'idle',
       data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
       query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
-      local: {},
+      local:
+        this.filterMode === 'local'
+          ? { mode: 'local', canonicalTotal: 0, visibleTotal: 0, lastSuccessAt: 0 }
+          : {},
       mutation: {},
       form: {},
       error: null,
@@ -1535,6 +1557,14 @@
       console.error('[wf-xano] refusing authenticated request over insecure HTTP', this.url)
       return
     }
+    var localFilterCollisions = this.localFilterRemoteCollisions()
+    if (localFilterCollisions.length) {
+      console.error(
+        '[wf-xano] local filter fields cannot also be search or sort params:',
+        localFilterCollisions.join(', '),
+      )
+      return
+    }
     this.ok = true
     if (this.template) this.template.style.display = 'none'
     root.__wfXano = this
@@ -1551,6 +1581,7 @@
       'init',
     )
     this.bindControls()
+    this.bindFocusRevalidation()
     this._registerForms(this.root)
     if (this.url) this.load()
     else this._transition({ status: 'success' }, 'init:form-only')
@@ -1894,7 +1925,7 @@
     var targets = []
     // Optimistic partial responses must always converge against Xano, so the
     // owning instance refreshes once even if the invalidate list omits 'self'.
-    if (forceSelf && !skipSelf) targets.push(self)
+    if (self.filterMode === 'local' || (forceSelf && !skipSelf)) targets.push(self)
     spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
       instances.forEach(function (instance) {
         if ((!skipSelf && key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
@@ -2391,6 +2422,175 @@
     return params
   }
 
+  /** Fields authored with wf-xano-filter become in-page filters only when the
+   *  wrapper explicitly opts into `wf-xano-filter-mode="local"`. Search and
+   *  sort remain remote so local mode cannot silently impersonate a search
+   *  index or server ordering contract. */
+  Instance.prototype.localFilterFields = function () {
+    if (this.filterMode !== 'local') return []
+    var fields = {}
+    this.qa('[wf-xano-filter]').forEach(function (el) {
+      if (el.matches('[wf-xano-element="clear"], [wf-xano-clear]')) return
+      var field = String(el.getAttribute('wf-xano-filter') || '').trim()
+      if (field) fields[field] = true
+    })
+    return Object.keys(fields)
+  }
+
+  Instance.prototype.isLocalFilterField = function (field) {
+    return this.localFilterFields().indexOf(String(field || '')) > -1
+  }
+
+  Instance.prototype.localFilterRemoteCollisions = function () {
+    if (this.filterMode !== 'local') return []
+    var local = {}
+    this.localFilterFields().forEach(function (field) {
+      local[field] = true
+    })
+    var collisions = {}
+    this.qa('[wf-xano-search], [wf-xano-sort]').forEach(function (el) {
+      var field = el.getAttribute('wf-xano-search')
+      if (!field && el.hasAttribute('wf-xano-sort')) field = el.getAttribute('wf-xano-sort') || 'sort'
+      if (field && local[field]) collisions[field] = true
+    })
+    return Object.keys(collisions)
+  }
+
+  /** Copy only server-owned params into a request. Local filter state remains
+   *  in `this.params` for controls, URL sync, and reactive query projections. */
+  Instance.prototype.requestParams = function () {
+    var params = Object.assign({}, this.params)
+    this.localFilterFields().forEach(function (field) {
+      delete params[field]
+    })
+    return params
+  }
+
+  function localFilterValues(value) {
+    return String(value == null ? '' : value)
+      .split(',')
+      .map(function (entry) {
+        return entry.trim().toLowerCase()
+      })
+      .filter(Boolean)
+  }
+
+  function localItemValues(value) {
+    var values = Array.isArray(value) ? value : [value]
+    return values
+      .map(function (entry) {
+        return String(entry == null ? '' : entry).trim().toLowerCase()
+      })
+      .filter(Boolean)
+  }
+
+  Instance.prototype.filteredLocalItems = function () {
+    var self = this
+    var fields = this.localFilterFields()
+    return this._canonicalItems.filter(function (item) {
+      return fields.every(function (field) {
+        var wanted = localFilterValues(self.params[field])
+        if (!wanted.length) return true
+        var actual = localItemValues(get(item, field))
+        return wanted.some(function (value) {
+          return actual.indexOf(value) > -1
+        })
+      })
+    })
+  }
+
+  /** Apply local filters without rebuilding cards. Reactive state exposes the
+   *  visible projection plus aggregate freshness metadata; the authorized
+   *  canonical snapshot remains page-memory owned by this instance. */
+  Instance.prototype.applyLocalFilters = function (reason, transition) {
+    if (this.filterMode !== 'local') return null
+    var visible = this.filteredLocalItems()
+    var visibleIds = {}
+    var self = this
+    visible.forEach(function (item) {
+      var id = item && get(item, self.keyField)
+      if (id != null) visibleIds[String(id)] = true
+    })
+    var list = this.listEl || this.template.parentNode
+    qa(list, '[wf-xano-item]')
+      .filter(function (card) {
+        return ownerRoot(card) === self.root
+      })
+      .forEach(function (card) {
+        var showCard = !!visibleIds[String(card.getAttribute('data-wf-xano-id') || '')]
+        card.style.display = showCard ? '' : 'none'
+        if (showCard) card.removeAttribute('aria-hidden')
+        else card.setAttribute('aria-hidden', 'true')
+      })
+
+    showStateEl(this.emptyEl, visible.length === 0)
+    this.root.classList.toggle('is-wf-xano-empty', visible.length === 0)
+    this.qa(elSel('total')).forEach(function (el) {
+      if (!el.getAttribute('wf-xano-field')) el.textContent = String(visible.length)
+    })
+    this.qa(elSel('count-from')).forEach(function (el) {
+      el.textContent = visible.length ? '1' : '0'
+    })
+    this.qa(elSel('count-to')).forEach(function (el) {
+      el.textContent = String(visible.length)
+    })
+    this.qa(elSel('pagination-wrapper')).forEach(function (el) {
+      showStateEl(el, false)
+    })
+    this.qa(elSel('load-more')).forEach(function (el) {
+      showStateEl(el, false)
+      el.classList.add('is-disabled')
+      el.setAttribute('aria-disabled', 'true')
+    })
+    this.root.classList.add('is-wf-xano-single-page', 'is-wf-xano-exhausted')
+    this.updateFilterUI()
+    if (this.urlSync) this.syncUrl()
+
+    if (transition !== false) {
+      this._transition(
+        {
+          status: 'success',
+          data: {
+            items: cloneStateValue(visible),
+            total: visible.length,
+            page: 1,
+            pages: 1,
+            hasMore: false,
+          },
+          query: { params: Object.assign({}, this.params), page: 1, perPage: this.perPage },
+          local: {
+            mode: 'local',
+            canonicalTotal: this._canonicalItems.length,
+            visibleTotal: visible.length,
+            lastSuccessAt: this._lastSuccessAt,
+          },
+          error: null,
+        },
+        reason || 'filter:local',
+      )
+    }
+    return visible
+  }
+
+  /** Revalidate a long-open local list when it becomes active again. Focus
+   *  and visibility events often arrive together, so attempts are coalesced. */
+  Instance.prototype.bindFocusRevalidation = function () {
+    if (this.filterMode !== 'local' || !this.revalidateFocusMs) return
+    var self = this
+    var signal = this._ac ? { signal: this._ac.signal } : false
+    var maybeRefresh = function () {
+      if (document.visibilityState === 'hidden') return
+      if (!self.ok || self._destroyed || self._loading || !self._lastSuccessAt) return
+      var now = Date.now()
+      if (now - self._lastSuccessAt < self.revalidateFocusMs) return
+      if (now - self._lastRevalidateAttemptAt < 1000) return
+      self._lastRevalidateAttemptAt = now
+      self.refresh()
+    }
+    window.addEventListener('focus', maybeRefresh, signal)
+    document.addEventListener('visibilitychange', maybeRefresh, signal)
+  }
+
   /* ------------------------- URL STATE SYNC ------------------------- */
   Instance.prototype.urlPrefix = function () {
     return (this.key || 'wfx') + '_'
@@ -2695,6 +2895,7 @@
   /** Append the next page (load-more / infinite). No-op while a load is in
    *  flight or when the last response reported no further pages. */
   Instance.prototype.loadNext = function () {
+    if (this.filterMode === 'local') return Promise.resolve({ local: true, exhausted: true })
     if (this._loading || (this._lastResult && !this._lastResult.hasMore)) return
     var previousPage = this.page
     this.page += 1
@@ -2710,10 +2911,19 @@
     else this.params[field] = value
     this.page = 1
     this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:param')
+    if (this.isLocalFilterField(field)) {
+      this.hydrateControls()
+      if (!this._lastSuccessAt && this._loading) {
+        return Promise.resolve({ local: true, pending: true, field: field, value: value })
+      }
+      var visible = this.applyLocalFilters('filter:local') || []
+      return Promise.resolve({ local: true, field: field, value: value, total: visible.length })
+    }
     return this.load()
   }
 
   Instance.prototype.goToPage = function (page) {
+    if (this.filterMode === 'local') return Promise.resolve({ local: true, page: 1 })
     this.page = page
     this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:page')
     return this.load()
@@ -2727,10 +2937,21 @@
   /** Reset every user filter back to the static wf-xano-param-* baseline —
    *  wf-algolia's clearAllFilters equivalent. */
   Instance.prototype.clearParams = function () {
+    var before = Object.assign({}, this.params)
     this.params = Object.assign({}, this.baseParams)
     this.page = 1
     this._transition({ query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage } }, 'query:clear')
     this.hydrateControls()
+    if (this.filterMode === 'local') {
+      var self = this
+      var changedRemote = Object.keys(Object.assign({}, before, this.params)).some(function (field) {
+        return !self.isLocalFilterField(field) && before[field] !== self.params[field]
+      })
+      if (!changedRemote) {
+        var visible = this.applyLocalFilters('filter:local:clear') || []
+        return Promise.resolve({ local: true, total: visible.length })
+      }
+    }
     return this.load()
   }
 
@@ -2842,6 +3063,10 @@
   Instance.prototype.load = async function (opts) {
     if (!this.ok) return
     var append = !!(opts && opts.append)
+    if (this.filterMode === 'local') {
+      append = false
+      this.page = 1
+    }
     var previousPage = opts && opts.previousPage
     var self = this
     var seq = ++this._seq
@@ -2876,8 +3101,9 @@
       var headers = {}
       if (this.auth) headers.Authorization = 'Bearer ' + (await xanoToken(this))
       var payload = {}
-      Object.keys(this.params).forEach(function (k) {
-        payload[k] = self.params[k]
+      var requestParams = this.requestParams()
+      Object.keys(requestParams).forEach(function (k) {
+        payload[k] = requestParams[k]
       })
       payload.page = this.page
       payload.per_page = this.perPage
@@ -2913,23 +3139,42 @@
         if (seq !== this._seq) return
         if (Array.isArray(out)) result.items = out
       }
+      if (this.filterMode === 'local') {
+        this._canonicalItems = cloneStateValue(result.items)
+        result.total = result.items.length
+        result.page = 1
+        result.pages = 1
+        result.hasMore = false
+      }
       this.render(result, append)
       this.setState('idle')
       this._loading = false
       this._lastResult = result
-      var resultItems = cloneStateValue(result.items)
+      this._lastSuccessAt = Date.now()
+      var localItems =
+        this.filterMode === 'local' ? this.applyLocalFilters('load:local', false) || [] : result.items
+      var resultItems = cloneStateValue(localItems)
       var storedItems = append ? this._state.data.items.concat(resultItems) : resultItems
       this._transition(
         {
           status: 'success',
           data: {
             items: storedItems,
-            total: result.total,
-            page: result.page,
-            pages: result.pages,
-            hasMore: result.hasMore,
+            total: this.filterMode === 'local' ? resultItems.length : result.total,
+            page: this.filterMode === 'local' ? 1 : result.page,
+            pages: this.filterMode === 'local' ? 1 : result.pages,
+            hasMore: this.filterMode === 'local' ? false : result.hasMore,
           },
           query: { params: Object.assign({}, this.params), page: this.page, perPage: this.perPage },
+          local:
+            this.filterMode === 'local'
+              ? {
+                  mode: 'local',
+                  canonicalTotal: this._canonicalItems.length,
+                  visibleTotal: resultItems.length,
+                  lastSuccessAt: this._lastSuccessAt,
+                }
+              : {},
           error: null,
         },
         'load:success',
@@ -3220,10 +3465,14 @@
   /** Privacy-safe shadow comparison: stable IDs and aggregate metadata only. */
   Instance.prototype.audit = function () {
     var list = this.template ? this.listEl || this.template.parentNode : this.root
-    var domIds = qa(list, '[wf-xano-item]').map(function (el) {
-      return String(el.getAttribute('data-wf-xano-id') || '')
-    })
     var self = this
+    var domIds = qa(list, '[wf-xano-item]')
+      .filter(function (el) {
+        return self.filterMode !== 'local' || el.style.display !== 'none'
+      })
+      .map(function (el) {
+        return String(el.getAttribute('data-wf-xano-id') || '')
+      })
     var storeIds = this._state.data.items.map(function (item) {
       var id = item && get(item, self.keyField)
       return id != null ? String(id) : ''
@@ -3257,6 +3506,8 @@
     if (this._fetchAc) this._fetchAc.abort()
     if (this._io) this._io.disconnect()
     window.clearTimeout(this._searchTimer)
+    this._canonicalItems = []
+    this._lastSuccessAt = 0
     if (this.template) {
       qa(this.listEl || this.template.parentNode, '[wf-xano-item]').forEach(function (c) {
         c.remove()
