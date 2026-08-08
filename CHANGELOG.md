@@ -11,6 +11,8 @@
   invalidations, and auth changes continue to converge immediately on Xano.
 - Local mode exposes only the visible projection in reactive `state.data`, with canonical/visible
   totals and the last successful fetch time in `state.local`.
+- Local lists revalidate after successful optimistic item mutations and reject local filter fields
+  that collide with server-owned search or sort parameters.
 
 ## v0.30.0 — 2026-08-07
 

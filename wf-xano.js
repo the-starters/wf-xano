@@ -1557,6 +1557,14 @@
       console.error('[wf-xano] refusing authenticated request over insecure HTTP', this.url)
       return
     }
+    var localFilterCollisions = this.localFilterRemoteCollisions()
+    if (localFilterCollisions.length) {
+      console.error(
+        '[wf-xano] local filter fields cannot also be search or sort params:',
+        localFilterCollisions.join(', '),
+      )
+      return
+    }
     this.ok = true
     if (this.template) this.template.style.display = 'none'
     root.__wfXano = this
@@ -1917,7 +1925,7 @@
     var targets = []
     // Optimistic partial responses must always converge against Xano, so the
     // owning instance refreshes once even if the invalidate list omits 'self'.
-    if (forceSelf && !skipSelf) targets.push(self)
+    if (self.filterMode === 'local' || (forceSelf && !skipSelf)) targets.push(self)
     spec.split(',').map(function (key) { return key.trim() }).filter(Boolean).forEach(function (key) {
       instances.forEach(function (instance) {
         if ((!skipSelf && key === 'self' && instance === self) || (key !== 'self' && instance.key === key)) {
@@ -2431,6 +2439,21 @@
 
   Instance.prototype.isLocalFilterField = function (field) {
     return this.localFilterFields().indexOf(String(field || '')) > -1
+  }
+
+  Instance.prototype.localFilterRemoteCollisions = function () {
+    if (this.filterMode !== 'local') return []
+    var local = {}
+    this.localFilterFields().forEach(function (field) {
+      local[field] = true
+    })
+    var collisions = {}
+    this.qa('[wf-xano-search], [wf-xano-sort]').forEach(function (el) {
+      var field = el.getAttribute('wf-xano-search')
+      if (!field && el.hasAttribute('wf-xano-sort')) field = el.getAttribute('wf-xano-sort') || 'sort'
+      if (field && local[field]) collisions[field] = true
+    })
+    return Object.keys(collisions)
   }
 
   /** Copy only server-owned params into a request. Local filter state remains

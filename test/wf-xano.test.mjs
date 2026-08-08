@@ -3650,17 +3650,20 @@ const FULL_PAGE1 = {
   console.log('PASS 101: local filter — bounded focus revalidation')
 }
 
-// ---------- Test 102: mutation invalidation refreshes canonical rows and reapplies local filter ----------
+// ---------- Test 102: optimistic item reconciliation still refreshes the complete local collection ----------
 {
   const dom = new JSDOM(`<!doctype html><html><body>
     <section wf-xano-element="wrapper" wf-xano-source="g:projects" wf-xano-auth="none"
       wf-xano-filter-mode="local">
       <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Pending" checked>Pending</label>
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="*">All</label>
       <span wf-xano-element="total"></span>
       <article wf-xano-element="template">
         <span wf-xano-bind="status"></span>
         <button wf-xano-action="complete" wf-xano-action-source="g:complete"
-          wf-xano-action-param-record_id="item:id">Complete</button>
+          wf-xano-action-param-record_id="item:id" wf-xano-action-optimistic="true"
+          wf-xano-action-optimistic-field="status" wf-xano-action-optimistic-value="literal:Completed"
+          wf-xano-action-optimistic-rollback="item:status" wf-xano-action-response="item">Complete</button>
       </article>
       <div wf-xano-element="empty" style="display:none">empty</div>
     </section></body></html>`, { runScripts: 'outside-only' })
@@ -3671,23 +3674,55 @@ const FULL_PAGE1 = {
   w.fetch = (url) => {
     if (url.endsWith('/complete')) {
       actionCalls += 1
-      return makeRes({ ok: true })
+      return makeRes({ id: 1, status: 'Completed' })
     }
     listCalls += 1
-    const status = listCalls === 1 ? 'Pending' : 'Completed'
-    return makeRes(PAGE([{ id: 1, status }], 1))
+    return makeRes(PAGE([
+      { id: 1, status: listCalls === 1 ? 'Pending' : 'Completed' },
+      { id: 2, status: 'Active' },
+    ], 2))
   }
   w.eval(LIB)
-  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')))
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2))
   const inst = w.WfXano.instances[0]
   await inst.setParam('status', 'Pending')
-  assert.equal(await inst.runAction(w.document.querySelector('[wf-xano-item] button')), true)
+  assert.equal(await inst.runAction(w.document.querySelector('[data-wf-xano-id="1"] button')), true)
   assert.equal(actionCalls, 1)
-  assert.equal(listCalls, 2, 'successful mutation invalidates and re-fetches the canonical collection')
+  assert.equal(listCalls, 2, 'authoritative item reconciliation still re-fetches the canonical collection')
   assert.equal(inst.getParams().status, 'Pending', 'selected local filter survives invalidation')
   assert.equal(inst.getState().data.total, 0, 'refreshed Completed row no longer matches Pending')
   assert.equal(w.document.querySelector('[wf-xano-element="empty"]').style.display, '', 'filtered empty state is shown')
-  console.log('PASS 102: local filter — mutation invalidation refreshes and reapplies selection')
+  await inst.setParam('status', '*')
+  assert.equal(inst.getState().data.total, 2, 'clearing restores rows hidden during optimistic reconciliation')
+  assert.equal(w.document.querySelectorAll('[wf-xano-item]').length, 2, 'complete canonical cards remain available')
+  console.log('PASS 102: local filter — optimistic item reconciliation refreshes canonical collection')
+}
+
+// ---------- Test 103: local filter fields cannot collide with remote search or sort params ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section wf-xano-element="wrapper" wf-xano-source="g:search" wf-xano-auth="none"
+      wf-xano-filter-mode="local">
+      <input wf-xano-filter="status"><input wf-xano-search="status">
+      <article wf-xano-element="template"></article>
+    </section>
+    <section wf-xano-element="wrapper" wf-xano-source="g:sort" wf-xano-auth="none"
+      wf-xano-filter-mode="local">
+      <input wf-xano-filter="sort"><select wf-xano-sort><option value="recent">Recent</option></select>
+      <article wf-xano-element="template"></article>
+    </section></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  let calls = 0
+  let errors = 0
+  w.console.error = () => { errors += 1 }
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => { calls += 1; return makeRes(PAGE([], 0)) }
+  w.eval(LIB)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(calls, 0, 'ambiguous local and remote params never issue a request')
+  assert.equal(w.WfXano.instances.length, 0, 'both colliding declarations are rejected')
+  assert.equal(errors, 2, 'each invalid wrapper reports its configuration error')
+  console.log('PASS 103: local filter — remote search/sort param collisions are rejected')
 }
 
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

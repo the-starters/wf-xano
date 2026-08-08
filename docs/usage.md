@@ -148,6 +148,8 @@ filters can switch the stable card set in page memory:
 cache: the canonical snapshot lives only on the current page, every fetch uses `cache: 'no-store'`,
 and focus revalidation replaces it after the configured age. Use local mode only when the endpoint
 returns the full authorized collection in one response. Search and sort remain remote.
+Do not reuse a local filter field as a search or sort parameter on the same instance; the wrapper
+is rejected as ambiguous instead of stripping a server-owned value.
 
 ## 6. Declarative create/edit forms
 
