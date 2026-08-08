@@ -143,7 +143,7 @@ State shape:
   status: 'idle' | 'loading' | 'success' | 'error' | 'destroyed',
   data: { items: [], total: 0, page: 1, pages: 1, hasMore: false },
   query: { params: {}, page: 1, perPage: 20 },
-  local: {},
+  local: {}, // or { mode: 'local', canonicalTotal, visibleTotal, lastSuccessAt }
   mutation: {},
   form: {},
   error: null | { name: 'Error', status: 500 },
@@ -153,6 +153,8 @@ State shape:
 
 The state error intentionally excludes server response bodies, authentication values, and raw error
 messages. The existing `error` event still receives the original `Error` for compatibility.
+In local-filter mode, `data.items` is the current visible projection. `local.canonicalTotal` reports
+the size of the authorized page-memory snapshot without duplicating its full rows into reactive state.
 
 ### Read-only DOM projections (v0.20)
 

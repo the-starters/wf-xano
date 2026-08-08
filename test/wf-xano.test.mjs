@@ -3565,4 +3565,129 @@ const FULL_PAGE1 = {
   console.log('PASS 99b: details-toggle — default is-inactive, standalone wiring, composite icon')
 }
 
+// ---------- Test 100: explicit local filters never refetch or enter the request body ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section wf-xano-element="wrapper" wf-xano-instance="projects" wf-xano-source="g:projects"
+      wf-xano-auth="none" wf-xano-filter-mode="local" wf-xano-url-sync="true">
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="*" checked>All</label>
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Pending">Pending</label>
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Active">Active</label>
+      <span wf-xano-element="total"></span>
+      <div wf-xano-element="empty" style="display:none">empty</div>
+      <article wf-xano-element="template"><h2 wf-xano-bind="title"></h2></article>
+    </section></body></html>`, {
+    runScripts: 'outside-only',
+    url: 'https://x.test/dashboard?projects_status=Pending',
+  })
+  const w = dom.window
+  const bodies = []
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url, opts) => {
+    bodies.push(JSON.parse(opts.body))
+    return makeRes(PAGE([
+      { id: 1, title: 'P1', status: 'Pending' },
+      { id: 2, title: 'A1', status: 'Active' },
+      { id: 3, title: 'P2', status: 'pending' },
+    ], 3))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 3))
+  const inst = w.WfXano.get('projects')
+  const cards = [...w.document.querySelectorAll('[wf-xano-item]')]
+  const activeCard = cards[1]
+  assert.equal(bodies.length, 1, 'initial canonical collection fetched once')
+  assert.equal(bodies[0].status, undefined, 'URL-restored local status never enters request body')
+  assert.equal(cards.filter((card) => card.style.display !== 'none').length, 2, 'URL-restored Pending filter applies locally')
+  assert.equal(w.document.querySelector('[wf-xano-element="total"]').textContent, '2', 'total reflects visible rows')
+  assert.equal(inst.getState().data.items.length, 2, 'public data state contains the visible projection')
+  assert.equal(inst.getState().local.canonicalTotal, 3, 'local state exposes only aggregate canonical count')
+
+  const result = await inst.setParam('status', 'Active')
+  assert.equal(result.local, true, 'setParam reports a local transition')
+  assert.equal(bodies.length, 1, 'local filter switch issues no replacement request')
+  assert.equal(activeCard.style.display, '', 'matching canonical card becomes visible')
+  assert.equal(cards.filter((card) => card.style.display !== 'none').length, 1, 'only Active remains visible')
+  assert.equal(w.document.querySelector('[wf-xano-element="total"]').textContent, '1')
+  assert.equal(inst.audit().ok, true, 'audit compares the visible local projection')
+
+  await inst.setParam('status', '*')
+  assert.equal(cards.filter((card) => card.style.display !== 'none').length, 3, 'All restores every cached card')
+  assert.equal(bodies.length, 1, 'All is local too')
+  console.log('PASS 100: local filter — complete fetch once, request stripping, URL restore, stable DOM')
+}
+
+// ---------- Test 101: local lists revalidate on focus only after max age ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section wf-xano-element="wrapper" wf-xano-source="g:projects" wf-xano-auth="none"
+      wf-xano-filter-mode="local" wf-xano-revalidate-focus="60">
+      <input wf-xano-filter="status">
+      <article wf-xano-element="template"><span wf-xano-bind="title"></span></article>
+    </section></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  let now = 1000
+  let calls = 0
+  w.Date.now = () => now
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => {
+    calls += 1
+    return makeRes(PAGE([{ id: 1, title: `v${calls}`, status: 'Active' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => calls === 1 && w.document.querySelector('[wf-xano-item]')))
+  now += 59_000
+  w.dispatchEvent(new w.Event('focus'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(calls, 1, 'fresh snapshot is not revalidated')
+  now += 1_001
+  w.dispatchEvent(new w.Event('focus'))
+  assert.ok(await waitFor(() => calls === 2), 'stale snapshot revalidates when the tab regains focus')
+  w.document.dispatchEvent(new w.Event('visibilitychange'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(calls, 2, 'paired focus/visibility events coalesce after success')
+  assert.equal(w.document.querySelector('[wf-xano-item] [wf-xano-bind="title"]').textContent, 'v2')
+  console.log('PASS 101: local filter — bounded focus revalidation')
+}
+
+// ---------- Test 102: mutation invalidation refreshes canonical rows and reapplies local filter ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <section wf-xano-element="wrapper" wf-xano-source="g:projects" wf-xano-auth="none"
+      wf-xano-filter-mode="local">
+      <label><input type="radio" name="status" wf-xano-filter="status" wf-xano-value="Pending" checked>Pending</label>
+      <span wf-xano-element="total"></span>
+      <article wf-xano-element="template">
+        <span wf-xano-bind="status"></span>
+        <button wf-xano-action="complete" wf-xano-action-source="g:complete"
+          wf-xano-action-param-record_id="item:id">Complete</button>
+      </article>
+      <div wf-xano-element="empty" style="display:none">empty</div>
+    </section></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  let listCalls = 0
+  let actionCalls = 0
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (url) => {
+    if (url.endsWith('/complete')) {
+      actionCalls += 1
+      return makeRes({ ok: true })
+    }
+    listCalls += 1
+    const status = listCalls === 1 ? 'Pending' : 'Completed'
+    return makeRes(PAGE([{ id: 1, status }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')))
+  const inst = w.WfXano.instances[0]
+  await inst.setParam('status', 'Pending')
+  assert.equal(await inst.runAction(w.document.querySelector('[wf-xano-item] button')), true)
+  assert.equal(actionCalls, 1)
+  assert.equal(listCalls, 2, 'successful mutation invalidates and re-fetches the canonical collection')
+  assert.equal(inst.getParams().status, 'Pending', 'selected local filter survives invalidation')
+  assert.equal(inst.getState().data.total, 0, 'refreshed Completed row no longer matches Pending')
+  assert.equal(w.document.querySelector('[wf-xano-element="empty"]').style.display, '', 'filtered empty state is shown')
+  console.log('PASS 102: local filter — mutation invalidation refreshes and reapplies selection')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

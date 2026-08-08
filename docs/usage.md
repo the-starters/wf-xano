@@ -129,6 +129,26 @@ control the same `wf-xano-instance` value:
 Loading modes are `pagination` (default), `more`, `infinite`, and `all`. Any filter, search, or sort
 change resets append modes to page 1 so results cannot mix across different queries.
 
+For a small endpoint that already returns the signed-in member's complete authorized collection,
+filters can switch the stable card set in page memory:
+
+```html
+<nav>
+  <button wf-xano-filter="status" wf-xano-value="*" wf-xano-instance="projects">All</button>
+  <button wf-xano-filter="status" wf-xano-value="Pending" wf-xano-instance="projects">Pending</button>
+</nav>
+<div wf-xano-element="wrapper" wf-xano-instance="projects"
+  wf-xano-source="dashboard:member/projects/list"
+  wf-xano-filter-mode="local" wf-xano-revalidate-focus="60">
+  <article wf-xano-element="template"><h3 wf-xano-bind="name"></h3></article>
+</div>
+```
+
+`local` is explicit and `remote` remains the default. It is not browser persistence or an HTTP
+cache: the canonical snapshot lives only on the current page, every fetch uses `cache: 'no-store'`,
+and focus revalidation replaces it after the configured age. Use local mode only when the endpoint
+returns the full authorized collection in one response. Search and sort remain remote.
+
 ## 6. Declarative create/edit forms
 
 Forms can be the only controller inside a wrapper. Mark every submitted field explicitly; do not

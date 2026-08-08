@@ -343,6 +343,8 @@ Add these to the elements above to tune behavior.
 | `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
 | `wf-xano-debounce` | ms | `300` | Debounce for search inputs (can be overridden per input). |
 | `wf-xano-url-sync` | `true` | — | Write page + declared filter/search/sort state to the query string (`<key>_page`, `<key>_<param>`) and restore it on load. Static `wf-xano-param-*` values are never serialized or overwritten from the URL. |
+| `wf-xano-filter-mode` | `remote`, `local` | `remote` | `remote` re-fetches for every filter change. `local` fetches one complete authorized collection, keeps its keyed cards stable, and applies declared `wf-xano-filter` controls in page memory. Search and sort stay remote. Use only when one response is the complete collection; local mode intentionally ignores server paging metadata. |
+| `wf-xano-revalidate-focus` | seconds | `0` | For `filter-mode="local"`, re-fetch when the tab becomes active after this many seconds since the last successful response. `0` disables focus revalidation. Explicit refreshes, successful invalidations, and auth changes still re-fetch. |
 | `wf-xano-param-<name>` | any value | — | Static request param, e.g. `wf-xano-param-status="Active"`. |
 | `wf-xano-refresh-on` | `favorite` | — | Re-fetch this list after a successful favorite toggle. Add `wf-xano-favorite-type` to scope it to one type. |
 | `wf-xano-defer` | `true` | — | Skip this wrapper during the automatic boot sweep; it never constructs or fetches until page code activates it with `WfXano.init(rootEl)` (root element as scope). For pages where an async gate (e.g. member role) decides which of several feeds should run. |
@@ -391,6 +393,10 @@ The key is also the [URL-sync](#settings) prefix and the argument to `WfXano.get
 
 - Every request is sent with `cache: 'no-store'` — Xano is authoritative and results are never
   served stale.
+- Local filter mode is an in-page rendering policy, not an HTTP cache. It still sends a fresh
+  `cache: 'no-store'` request on initial load and every revalidation, and the response must contain
+  the member's complete authorized collection in one response. Declared local filter fields are
+  omitted from that request; search, sort, and static parameters remain server-owned.
 - Requests are **sequenced**: when loads overlap (debounced search + a filter click), a stale
   out-of-order response is dropped instead of rendering over the newest one; superseded fetches
   are aborted when supported.
