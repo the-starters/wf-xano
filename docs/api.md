@@ -68,19 +68,19 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 | `key` | `string \| null` | The `wf-xano-instance` key. |
 | `page` | `number` | Current page. |
 | `perPage` | `number` | Page size. |
-| `params` | `Object` | Current request params (static + filters + search + sort). |
+| `params` | `Object` | Current query state (static + filters + search + sort). In local-filter mode, declared local filter fields remain here but are omitted from Xano requests. |
 
 ### Methods
 
 | Method | Description |
 | --- | --- |
-| `refresh()` | Re-fetch with the current state. Returns a promise. |
-| `setParam(field, value)` | Set (or clear, when `''`/`null`) a request param; resets to page 1 and reloads. |
-| `goToPage(page)` | Jump to a page and reload. |
-| `loadNext()` | Append the next page in `more`, `infinite`, or `all` modes. A failed append preserves prior pages and is retryable. |
-| `getParams()` | Return a copy of all current request parameters. |
-| `clearParams()` | Restore the static `wf-xano-param-*` baseline and reload page 1. |
-| `userParams()` | Return only parameters that differ from the static baseline. |
+| `refresh()` | Re-fetch from Xano with the current server-owned params, then reapply any local filters. Returns a promise. |
+| `setParam(field, value)` | Set (or clear, when `''`/`null`) a query param and reset to page 1. Declared local filter fields update the visible projection without a request; search, sort, and other params reload from Xano. |
+| `goToPage(page)` | Jump to a page and reload. Local-filter mode is always one page, so this is a no-op there. |
+| `loadNext()` | Append the next page in `more`, `infinite`, or `all` modes. A failed append preserves prior pages and is retryable. Local-filter mode is always exhausted, so this is a no-op there. |
+| `getParams()` | Return a copy of all current query parameters, including local filter state. |
+| `clearParams()` | Restore the static `wf-xano-param-*` baseline and page 1. In local-filter mode, this reloads only when a server-owned param changed; otherwise it updates the visible projection in page memory. |
+| `userParams()` | Return only query parameters that differ from the static baseline. |
 | `getState()` | Return a defensive snapshot of status, data, query, local, mutation, form, safe error metadata, and revision. |
 | `runAction(control)` | Run one configured `wf-xano-action` control. Duplicate calls for the same action/item share one promise. Resolves `true` after mutation success and declared invalidation, otherwise `false`; invalid configuration rejects. |
 | `submitForm(form)` | Submit one owned `wf-xano-form`. Duplicate calls for the same form key share one promise. Resolves `true` after Xano success and declared invalidation, otherwise `false`; invalid configuration rejects. |
@@ -96,7 +96,7 @@ Each `wf-xano-element="wrapper"` gets an instance, reachable via `WfXano.get(key
 
 | Event | Payload | Description |
 | --- | --- | --- |
-| `results` | `{ items, total, page, pages, hasMore }` | After a successful render. Late subscribers immediately receive the last result. |
+| `results` | `{ items, total, page, pages, hasMore }` | After a successful render. Late subscribers immediately receive the last result. In local-filter mode this is the newly fetched canonical collection; use `getState().data` for the visible projection. |
 | `error` | `Error` | After a failed request. |
 | `beforeRender` | `(items, result)` | **Transform hook** — runs between fetch and render. Return a replacement items array (sync or async) to filter, augment, or reorder what renders. |
 | `stateChange` | `{ reason, previous: { status, revision }, current: { status, revision } }` | Privacy-safe metadata after a store transition. Use `subscribe` when the state value itself is needed. |
