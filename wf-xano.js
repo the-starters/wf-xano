@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.31.0'
+  var VERSION = '0.32.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1261,6 +1261,35 @@
     return null
   }
 
+  /** Remove an authored details panel's children from each new card until the
+   *  user opens it. The detached fragment keeps the exact Designer markup but
+   *  avoids binding and painting a large hidden subtree for every list row.
+   *  Opt in on the details target with wf-xano-lazy-details. */
+  function deferLazyDetails(card, item) {
+    qaWithRoot(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
+      if (target.__wfXanoLazyDetails) return
+      var fragment = document.createDocumentFragment()
+      while (target.firstChild) fragment.appendChild(target.firstChild)
+      target.__wfXanoLazyDetails = { fragment: fragment, hydrated: false, item: item }
+    })
+  }
+
+  function updateLazyDetailsItem(card, item) {
+    qaWithRoot(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
+      if (target.__wfXanoLazyDetails) target.__wfXanoLazyDetails.item = item
+    })
+  }
+
+  function hydrateLazyDetails(target) {
+    var lazy = target && target.__wfXanoLazyDetails
+    if (!lazy || lazy.hydrated) return
+    lazy.hydrated = true
+    target.appendChild(lazy.fragment)
+    fillCard(target, lazy.item)
+    wireShowMore(target)
+    wireDetailsToggle(target)
+  }
+
   /** Attach the disclosure behavior once. @param {Element} btn @param {Element} target */
   function wireDetailsToggleButton(btn, target) {
     if (btn.__wfXanoDetailsToggle) return
@@ -1278,6 +1307,7 @@
     var openLabel = labelEl.textContent
     var closeLabel = btn.getAttribute('wf-xano-expanded-text')
     var apply = function (expanded) {
+      if (expanded) hydrateLazyDetails(target)
       btn.classList.toggle('is-wf-xano-expanded', expanded)
       target.classList.toggle('is-wf-xano-expanded', expanded)
       icons.forEach(function (icon) {
@@ -3232,6 +3262,7 @@
       card.setAttribute('wf-xano-item', '')
       card.style.display = ''
       if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
+      deferLazyDetails(card, item)
       fillCard(card, item)
       wireShowMore(card)
       wireDetailsToggle(card)
@@ -3314,6 +3345,7 @@
       var id = String(rawId)
       var card = existing[id]
       if (card) {
+        updateLazyDetailsItem(card, item)
         fillCard(card, item, true)
         delete existing[id]
       } else {
@@ -3322,6 +3354,7 @@
         card.setAttribute('wf-xano-item', '')
         card.setAttribute('data-wf-xano-id', id)
         card.style.display = ''
+        deferLazyDetails(card, item)
         fillCard(card, item, false)
         wireShowMore(card)
         wireDetailsToggle(card)
