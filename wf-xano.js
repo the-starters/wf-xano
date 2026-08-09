@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.0'
+  var VERSION = '0.32.1'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -829,6 +829,7 @@
   }
 
   function fillCard(card, item, preserveInteractive) {
+    updateLazyDetailsItem(card, item)
     // text / form-value binds (dot paths + optional wf-xano-format). Missing
     // values fall back through the comma-separated fields in order; epoch 0
     // is treated as missing only when a date format is active, e.g.
@@ -1266,18 +1267,47 @@
    *  user opens it. The detached fragment keeps the exact Designer markup but
    *  avoids binding and painting a large hidden subtree for every list row.
    *  Opt in on the details target with wf-xano-lazy-details. */
-  function deferLazyDetails(card, item) {
+  function deferLazyDetails(card, item, alreadyBound) {
     cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
       if (target.__wfXanoLazyDetails) return
+      if (alreadyBound && target.getAttribute('aria-hidden') === 'false') return
       var fragment = document.createDocumentFragment()
       while (target.firstChild) fragment.appendChild(target.firstChild)
-      target.__wfXanoLazyDetails = { fragment: fragment, hydrated: false, item: item }
+      target.__wfXanoLazyDetails = {
+        fragment: fragment,
+        hydrated: false,
+        item: item,
+        bound: !!alreadyBound,
+      }
     })
   }
 
   function updateLazyDetailsItem(card, item) {
-    cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
-      if (target.__wfXanoLazyDetails) target.__wfXanoLazyDetails.item = item
+    cardBindings(card, '[wf-xano-element="details-target"]').forEach(function (target) {
+      target.__wfXanoDetailsItem = item
+      if (target.__wfXanoLazyDetails) {
+        target.__wfXanoLazyDetails.item = item
+        target.__wfXanoLazyDetails.bound = false
+      }
+    })
+  }
+
+  function observeLazyDetails(instance) {
+    var list = instance.listEl || instance.template.parentNode
+    if (!list || typeof MutationObserver !== 'function') return
+    instance._lazyDetailsObserver = new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        var target = record.target
+        if (!target.matches('[wf-xano-element="details-target"][wf-xano-lazy-details]')) return
+        var card = target.closest('[data-wf-xano-nest-clone], [wf-xano-item]')
+        if (!card || !list.contains(card)) return
+        deferLazyDetails(card, target.__wfXanoDetailsItem, true)
+      })
+    })
+    instance._lazyDetailsObserver.observe(list, {
+      attributes: true,
+      attributeFilter: ['wf-xano-lazy-details'],
+      subtree: true,
     })
   }
 
@@ -1286,7 +1316,7 @@
     if (!lazy || lazy.hydrated) return
     lazy.hydrated = true
     target.appendChild(lazy.fragment)
-    fillCard(target, lazy.item)
+    if (!lazy.bound) fillCard(target, lazy.item)
     wireShowMore(target)
     wireDetailsToggle(target)
     if (q(target, '[wf-xano-element="show-more"]')) {
@@ -1569,6 +1599,7 @@
     }
     this._ac = typeof AbortController === 'function' ? new AbortController() : null
     this._fetchAc = null
+    this._lazyDetailsObserver = null
 
     this.formEls = qa(root, 'form[wf-xano-form]').filter(function (form) { return ownerRoot(form) === root })
     // A form-only wrapper whose forms all explicitly opt out of auth does not
@@ -1619,6 +1650,7 @@
     this.bindControls()
     this.bindFocusRevalidation()
     this._registerForms(this.root)
+    if (this.template) observeLazyDetails(this)
     if (this.url) this.load()
     else this._transition({ status: 'success' }, 'init:form-only')
   }
@@ -3275,6 +3307,7 @@
       if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
         list.insertBefore(card, self._infiniteSentinel)
       } else list.appendChild(card)
+      deferLazyDetails(card, item, true)
       self._registerForms(card)
       appended.push(card)
     })
@@ -3376,6 +3409,9 @@
       if (node.parentNode !== list || node.nextSibling !== anchor) list.insertBefore(node, anchor)
       anchor = node
     }
+    ordered.forEach(function (card, index) {
+      deferLazyDetails(card, items[index], true)
+    })
     ordered.forEach(function (card) { self._registerForms(card) })
     Object.keys(existing).forEach(function (id) { existing[id].remove() })
     if (focused && focused.isConnected && document.activeElement !== focused && typeof focused.focus === 'function') {
@@ -3544,6 +3580,7 @@
     if (this._ac) this._ac.abort()
     if (this._fetchAc) this._fetchAc.abort()
     if (this._io) this._io.disconnect()
+    if (this._lazyDetailsObserver) this._lazyDetailsObserver.disconnect()
     window.clearTimeout(this._searchTimer)
     this._canonicalItems = []
     this._lastSuccessAt = 0

@@ -3645,6 +3645,39 @@ const FULL_PAGE1 = {
   console.log('PASS 99d: nested-row lazy details retain markup and prune hydrated show-more')
 }
 
+// ---------- Test 99e: late Webflow marker detaches an already-bound keyed card ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="late-lazy" wf-xano-source="g:l"
+      wf-xano-auth="none" wf-xano-reconcile="keyed">
+      <div wf-xano-element="list">
+        <article wf-xano-element="template">
+          <button wf-xano-element="details-toggle">Project Details</button>
+          <div class="is-inactive" wf-xano-element="details-target">
+            <span class="detail" wf-xano-bind="detail"></span>
+          </div>
+        </article>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  let detail = 'already bound'
+  w.fetch = () => makeRes(PAGE([{ id: 1, detail }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'keyed card rendered')
+  const card = w.document.querySelector('[wf-xano-item]')
+  const panel = card.querySelector('[wf-xano-element="details-target"]')
+  assert.equal(panel.querySelector('.detail').textContent, 'already bound', 'card starts eagerly bound')
+  panel.setAttribute('wf-xano-lazy-details', '')
+  assert.ok(await waitFor(() => panel.childElementCount === 0), 'late marker detaches without another render')
+  detail = 'refreshed while detached'
+  await w.WfXano.get('late-lazy').refresh()
+  assert.equal(panel.childElementCount, 0, 'keyed refresh keeps the closed subtree detached')
+  card.querySelector('[wf-xano-element="details-toggle"]').click()
+  assert.equal(panel.querySelector('.detail').textContent, 'refreshed while detached', 'first open binds the latest item')
+  console.log('PASS 99e: late Webflow marker detaches an already-bound keyed card')
+}
+
 // ---------- Test 100: explicit local filters never refetch or enter the request body ----------
 {
   const dom = new JSDOM(`<!doctype html><html><body>

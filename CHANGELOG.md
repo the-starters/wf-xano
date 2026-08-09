@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.1 — 2026-08-09
+
+- Hardens lazy details for live Webflow timing: after a new card is inserted and bound, wf-xano
+  verifies that a closed lazy panel is actually detached. If a template attribute arrived too late
+  for the pre-bind pass, the already-bound subtree is preserved and detached for first open.
+
 ## v0.32.0 — 2026-08-09
 
 - New opt-in `wf-xano-lazy-details` marker detaches large closed details subtrees from rendered
