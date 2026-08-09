@@ -302,7 +302,13 @@ Set on the wrapper via `wf-xano-load` (Finsweet's `load` setting). Append modes 
 | `infinite` | Appends the next page as `load-more` (or an internal tail sentinel) scrolls into view. `wf-xano-threshold` (px) tunes the trigger distance. |
 | `all` | Fetches every page up front and accumulates. |
 
-Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. The root gets `is-wf-xano-exhausted` when no more pages remain.
+Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. As later pages
+arrive, wf-xano keeps the first item for each scalar value at the configured `wf-xano-key` field
+(`id` by default) and skips overlapping or repeated identities before rendering and updating state.
+Items without a scalar key cannot be deduplicated. This is a duplicate-card safeguard, not a
+replacement for deterministic endpoint ordering with a unique tie-breaker, which is still required
+to avoid missing records between pages. The root gets `is-wf-xano-exhausted` when no more pages
+remain.
 
 ### Filters, search, sort
 
