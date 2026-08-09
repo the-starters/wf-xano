@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.0 — 2026-08-09
+
+- New opt-in `wf-xano-lazy-details` marker detaches large closed details subtrees from rendered
+  list cards and hydrates the selected card once on first open. This keeps append pagination
+  responsive without changing page size, disclosure behavior, or nested-row binding.
+
 ## v0.31.0 — 2026-08-08
 
 - New opt-in `wf-xano-filter-mode="local"` for small, complete authorized collections. One

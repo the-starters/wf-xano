@@ -3565,6 +3565,86 @@ const FULL_PAGE1 = {
   console.log('PASS 99b: details-toggle — default is-inactive, standalone wiring, composite icon')
 }
 
+// ---------- Test 99c: lazy details hydrate only the opened card ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="list">
+        <article wf-xano-element="template">
+          <h3 wf-xano-bind="title"></h3>
+          <button wf-xano-element="details-toggle">Project Details</button>
+          <div class="details is-inactive" wf-xano-element="details-target" wf-xano-lazy-details>
+            <span class="detail" wf-xano-bind="detail"></span>
+            <div wf-xano-element="nest-target" wf-xano-field="rows">
+              <span wf-xano-element="nest-template" wf-xano-bind="label"></span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([
+    { id: 1, title: 'A', detail: 'da', rows: [{ label: 'a1' }, { label: 'a2' }] },
+    { id: 2, title: 'B', detail: 'db', rows: [{ label: 'b1' }] },
+  ], 2))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'two lazy cards rendered')
+  const cards = [...w.document.querySelectorAll('[wf-xano-item]')]
+  const panels = cards.map((card) => card.querySelector('[wf-xano-element="details-target"]'))
+  assert.equal(panels[0].childElementCount, 0, 'first closed details subtree is detached')
+  assert.equal(panels[1].childElementCount, 0, 'second closed details subtree is detached')
+  cards[0].querySelector('[wf-xano-element="details-toggle"]').click()
+  assert.equal(panels[0].querySelector('.detail').textContent, 'da', 'opened card hydrates its bound details')
+  assert.deepEqual(
+    [...panels[0].querySelectorAll('[data-wf-xano-nest-clone]')].map((el) => el.textContent),
+    ['a1', 'a2'],
+    'opened card hydrates nested rows',
+  )
+  assert.equal(panels[1].childElementCount, 0, 'unopened card remains detached')
+  const toggle = cards[0].querySelector('[wf-xano-element="details-toggle"]')
+  toggle.click()
+  toggle.click()
+  assert.equal(panels[0].querySelectorAll('[data-wf-xano-nest-clone]').length, 2, 'reopen does not duplicate nested rows')
+  console.log('PASS 99c: lazy details hydrate only the opened card')
+}
+
+// ---------- Test 99d: nested-row lazy details retain markup and prune hydrated show-more ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="list">
+        <article wf-xano-element="template">
+          <div wf-xano-element="nest-target" wf-xano-field="rows">
+            <section wf-xano-element="nest-template">
+              <button wf-xano-element="details-toggle">Details</button>
+              <div class="is-inactive" wf-xano-element="details-target" wf-xano-lazy-details>
+                <p class="nested-detail clamp2" wf-xano-bind="detail"></p>
+                <button wf-xano-element="show-more" wf-xano-target="detail" wf-xano-class="clamp2">More</button>
+              </div>
+            </section>
+          </div>
+        </article>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, rows: [{ detail: 'short detail' }] }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[data-wf-xano-nest-clone]')), 'nested row rendered')
+  const row = w.document.querySelector('[data-wf-xano-nest-clone]')
+  const panel = row.querySelector('[wf-xano-element="details-target"]')
+  assert.equal(panel.childElementCount, 0, 'nested-row details start detached')
+  row.querySelector('[wf-xano-element="details-toggle"]').click()
+  const detail = panel.querySelector('.nested-detail')
+  const showMore = panel.querySelector('[wf-xano-element="show-more"]')
+  assert.equal(detail.textContent, 'short detail', 'nested-row details retain and bind their fragment')
+  Object.defineProperty(detail, 'scrollHeight', { configurable: true, value: 40 })
+  Object.defineProperty(detail, 'clientHeight', { configurable: true, value: 40 })
+  assert.ok(await waitFor(() => showMore.style.display === 'none'), 'hydrated short content prunes show-more after layout')
+  console.log('PASS 99d: nested-row lazy details retain markup and prune hydrated show-more')
+}
+
 // ---------- Test 100: explicit local filters never refetch or enter the request body ----------
 {
   const dom = new JSDOM(`<!doctype html><html><body>
