@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.1'
+  var VERSION = '0.32.2'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -816,6 +816,22 @@
     }
     // Single object: render as one row.
     return { items: data ? [data] : [], total: data ? 1 : 0, page: 1, pages: 1, hasMore: false }
+  }
+
+  function uniqueAppendItems(existing, incoming, keyField) {
+    var seen = {}
+    ;(existing || []).forEach(function (item) {
+      var rawId = item && get(item, keyField)
+      if (rawId != null && typeof rawId !== 'object') seen[String(rawId)] = true
+    })
+    return (incoming || []).filter(function (item) {
+      var rawId = item && get(item, keyField)
+      if (rawId == null || typeof rawId === 'object') return true
+      var id = String(rawId)
+      if (seen[id]) return false
+      seen[id] = true
+      return true
+    })
   }
 
   /* ============================ CARD RENDER =========================== */
@@ -3213,6 +3229,12 @@
         result.page = 1
         result.pages = 1
         result.hasMore = false
+      }
+      if (append) {
+        // Offset pagination can overlap when rows share a sort value or the
+        // collection changes between requests. Never clone the same logical
+        // item twice into an accumulated list.
+        result.items = uniqueAppendItems(this._state.data.items, result.items, this.keyField)
       }
       this.render(result, append)
       this.setState('idle')

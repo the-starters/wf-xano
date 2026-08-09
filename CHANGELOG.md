@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.2 — 2026-08-10
+
+- Append-mode lists now deduplicate overlapping remote pages by their configured identity key
+  before rendering and committing state. This prevents duplicate cards when offset pagination
+  returns the same record at a page boundary.
+
 ## v0.32.1 — 2026-08-09
 
 - Hardens lazy details for live Webflow timing: after a new card is inserted and bound, wf-xano
