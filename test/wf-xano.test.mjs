@@ -3609,6 +3609,42 @@ const FULL_PAGE1 = {
   console.log('PASS 99c: lazy details hydrate only the opened card')
 }
 
+// ---------- Test 99d: nested-row lazy details retain markup and prune hydrated show-more ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:l" wf-xano-auth="none">
+      <div wf-xano-element="list">
+        <article wf-xano-element="template">
+          <div wf-xano-element="nest-target" wf-xano-field="rows">
+            <section wf-xano-element="nest-template">
+              <button wf-xano-element="details-toggle">Details</button>
+              <div class="is-inactive" wf-xano-element="details-target" wf-xano-lazy-details>
+                <p class="nested-detail clamp2" wf-xano-bind="detail"></p>
+                <button wf-xano-element="show-more" wf-xano-target="detail" wf-xano-class="clamp2">More</button>
+              </div>
+            </section>
+          </div>
+        </article>
+      </div>
+    </div></body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = () => makeRes(PAGE([{ id: 1, rows: [{ detail: 'short detail' }] }], 1))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelector('[data-wf-xano-nest-clone]')), 'nested row rendered')
+  const row = w.document.querySelector('[data-wf-xano-nest-clone]')
+  const panel = row.querySelector('[wf-xano-element="details-target"]')
+  assert.equal(panel.childElementCount, 0, 'nested-row details start detached')
+  row.querySelector('[wf-xano-element="details-toggle"]').click()
+  const detail = panel.querySelector('.nested-detail')
+  const showMore = panel.querySelector('[wf-xano-element="show-more"]')
+  assert.equal(detail.textContent, 'short detail', 'nested-row details retain and bind their fragment')
+  Object.defineProperty(detail, 'scrollHeight', { configurable: true, value: 40 })
+  Object.defineProperty(detail, 'clientHeight', { configurable: true, value: 40 })
+  assert.ok(await waitFor(() => showMore.style.display === 'none'), 'hydrated short content prunes show-more after layout')
+  console.log('PASS 99d: nested-row lazy details retain markup and prune hydrated show-more')
+}
+
 // ---------- Test 100: explicit local filters never refetch or enter the request body ----------
 {
   const dom = new JSDOM(`<!doctype html><html><body>

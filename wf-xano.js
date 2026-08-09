@@ -986,6 +986,7 @@
       clone.setAttribute('data-wf-xano-nest-clone', '')
       clone.style.display = ''
       target.insertBefore(clone, empty && empty.parentNode === target ? empty : null)
+      deferLazyDetails(clone, row)
       fillCard(clone, row)
     })
     if (empty) empty.style.display = rows.length ? 'none' : ''
@@ -1266,7 +1267,7 @@
    *  avoids binding and painting a large hidden subtree for every list row.
    *  Opt in on the details target with wf-xano-lazy-details. */
   function deferLazyDetails(card, item) {
-    qaWithRoot(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
+    cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
       if (target.__wfXanoLazyDetails) return
       var fragment = document.createDocumentFragment()
       while (target.firstChild) fragment.appendChild(target.firstChild)
@@ -1275,7 +1276,7 @@
   }
 
   function updateLazyDetailsItem(card, item) {
-    qaWithRoot(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
+    cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
       if (target.__wfXanoLazyDetails) target.__wfXanoLazyDetails.item = item
     })
   }
@@ -1288,6 +1289,11 @@
     fillCard(target, lazy.item)
     wireShowMore(target)
     wireDetailsToggle(target)
+    if (q(target, '[wf-xano-element="show-more"]')) {
+      setTimeout(function () {
+        pruneShowMore([target])
+      }, 0)
+    }
   }
 
   /** Attach the disclosure behavior once. @param {Element} btn @param {Element} target */
