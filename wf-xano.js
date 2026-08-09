@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.1'
+  var VERSION = '0.32.2'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -816,6 +816,22 @@
     }
     // Single object: render as one row.
     return { items: data ? [data] : [], total: data ? 1 : 0, page: 1, pages: 1, hasMore: false }
+  }
+
+  function uniqueAppendItems(existing, incoming, keyField) {
+    var seen = Object.create(null)
+    ;(existing || []).forEach(function (item) {
+      var rawId = item && get(item, keyField)
+      if (rawId != null && typeof rawId !== 'object') seen[String(rawId)] = true
+    })
+    return (incoming || []).filter(function (item) {
+      var rawId = item && get(item, keyField)
+      if (rawId == null || typeof rawId === 'object') return true
+      var id = String(rawId)
+      if (seen[id]) return false
+      seen[id] = true
+      return true
+    })
   }
 
   /* ============================ CARD RENDER =========================== */
@@ -2573,7 +2589,7 @@
   Instance.prototype.applyLocalFilters = function (reason, transition) {
     if (this.filterMode !== 'local') return null
     var visible = this.filteredLocalItems()
-    var visibleIds = {}
+    var visibleIds = Object.create(null)
     var self = this
     visible.forEach(function (item) {
       var id = item && get(item, self.keyField)
@@ -3214,6 +3230,12 @@
         result.pages = 1
         result.hasMore = false
       }
+      if (append) {
+        // Offset pagination can overlap when rows share a sort value or the
+        // collection changes between requests. Never clone the same logical
+        // item twice into an accumulated list.
+        result.items = uniqueAppendItems(this._state.data.items, result.items, this.keyField)
+      }
       this.render(result, append)
       this.setState('idle')
       this._loading = false
@@ -3299,7 +3321,8 @@
       clearRole(card, 'template')
       card.setAttribute('wf-xano-item', '')
       card.style.display = ''
-      if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
+      var rawId = item && get(item, self.keyField)
+      if (rawId != null && typeof rawId !== 'object') card.setAttribute('data-wf-xano-id', rawId)
       deferLazyDetails(card, item)
       fillCard(card, item)
       wireShowMore(card)
@@ -3354,7 +3377,7 @@
 
   Instance.prototype._renderItemsKeyed = function (items, list) {
     var self = this
-    var validated = {}
+    var validated = Object.create(null)
     items.forEach(function (item) {
       var rawId = item && get(item, self.keyField)
       if (rawId == null || typeof rawId === 'object' || validated[String(rawId)]) {
@@ -3371,7 +3394,7 @@
         }
       } catch (e) { selection = null }
     }
-    var existing = {}
+    var existing = Object.create(null)
     qa(list, '[wf-xano-item]').filter(function (card) { return ownerRoot(card) === self.root }).forEach(function (card) {
       var id = card.getAttribute('data-wf-xano-id')
       if (id != null && !existing[id]) existing[id] = card

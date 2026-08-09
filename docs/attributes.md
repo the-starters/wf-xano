@@ -29,7 +29,7 @@ remain supported as aliases.
 | --- | --- | --- | --- |
 | `wf-xano-element="wrapper"` | ✅ | the outer wrapper | Marks the list root/scope (Finsweet's `wrapper`). Settings live here; everything else is found inside it (or linked by an [instance key](#scoping--instance-keys)). |
 | `wf-xano-element="list"` | — | the items container | Optional (Finsweet's `list`): where rendered cards are appended. Defaults to the template's own parent. *(v0.3.0 markup that put `element="list"` + `wf-xano-source` on the root still initializes as a root — deprecated alias.)* |
-| `wf-xano-element="template"` | ✅ | the card | The item template. Cloned once per item; the original stays hidden. Rendered clones get `wf-xano-item` and `data-wf-xano-id="<item.id>"`. |
+| `wf-xano-element="template"` | ✅ | the card | The item template. Cloned once per item; the original stays hidden. Rendered clones get `wf-xano-item` and, when the configured `wf-xano-key` value is scalar, `data-wf-xano-id="<key value>"` (`id` by default). |
 | `wf-xano-element="empty"` | — | any element | Shown when the response has 0 items. |
 | `wf-xano-element="loader"` | — | any element | Shown while a request is in flight. |
 | `wf-xano-element="error"` | — | any element | Shown when a request fails. |
@@ -302,7 +302,13 @@ Set on the wrapper via `wf-xano-load` (Finsweet's `load` setting). Append modes 
 | `infinite` | Appends the next page as `load-more` (or an internal tail sentinel) scrolls into view. `wf-xano-threshold` (px) tunes the trigger distance. |
 | `all` | Fetches every page up front and accumulates. |
 
-Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. The root gets `is-wf-xano-exhausted` when no more pages remain.
+Append modes reset (replace, back to page 1) on any filter/search/sort/clear change. As later pages
+arrive, wf-xano keeps the first item for each scalar value at the configured `wf-xano-key` field
+(`id` by default) and skips overlapping or repeated identities before rendering and updating state.
+Items without a scalar key cannot be deduplicated. This is a duplicate-card safeguard, not a
+replacement for deterministic endpoint ordering with a unique tie-breaker, which is still required
+to avoid missing records between pages. The root gets `is-wf-xano-exhausted` when no more pages
+remain.
 
 ### Filters, search, sort
 
