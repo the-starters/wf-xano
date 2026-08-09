@@ -819,7 +819,7 @@
   }
 
   function uniqueAppendItems(existing, incoming, keyField) {
-    var seen = {}
+    var seen = Object.create(null)
     ;(existing || []).forEach(function (item) {
       var rawId = item && get(item, keyField)
       if (rawId != null && typeof rawId !== 'object') seen[String(rawId)] = true
@@ -2589,7 +2589,7 @@
   Instance.prototype.applyLocalFilters = function (reason, transition) {
     if (this.filterMode !== 'local') return null
     var visible = this.filteredLocalItems()
-    var visibleIds = {}
+    var visibleIds = Object.create(null)
     var self = this
     visible.forEach(function (item) {
       var id = item && get(item, self.keyField)
@@ -3321,7 +3321,8 @@
       clearRole(card, 'template')
       card.setAttribute('wf-xano-item', '')
       card.style.display = ''
-      if (item && item.id != null) card.setAttribute('data-wf-xano-id', item.id)
+      var rawId = item && get(item, self.keyField)
+      if (rawId != null && typeof rawId !== 'object') card.setAttribute('data-wf-xano-id', rawId)
       deferLazyDetails(card, item)
       fillCard(card, item)
       wireShowMore(card)
@@ -3376,7 +3377,7 @@
 
   Instance.prototype._renderItemsKeyed = function (items, list) {
     var self = this
-    var validated = {}
+    var validated = Object.create(null)
     items.forEach(function (item) {
       var rawId = item && get(item, self.keyField)
       if (rawId == null || typeof rawId === 'object' || validated[String(rawId)]) {
@@ -3393,7 +3394,7 @@
         }
       } catch (e) { selection = null }
     }
-    var existing = {}
+    var existing = Object.create(null)
     qa(list, '[wf-xano-item]').filter(function (card) { return ownerRoot(card) === self.root }).forEach(function (card) {
       var id = card.getAttribute('data-wf-xano-id')
       if (id != null && !existing[id]) existing[id] = card

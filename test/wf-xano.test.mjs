@@ -3888,4 +3888,49 @@ const FULL_PAGE1 = {
   console.log('PASS 104: append mode deduplicates overlapping remote pages')
 }
 
+// ---------- Test 105: append dedupe accepts prototype-named configured identities ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:projects" wf-xano-auth="none"
+         wf-xano-load="more" wf-xano-key="slug">
+      <div wf-xano-element="list">
+        <article wf-xano-element="template"><span wf-xano-bind="title"></span></article>
+      </div>
+      <button wf-xano-element="load-more">More</button>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  w.fetch = (_url, opts) => {
+    const page = JSON.parse(opts.body).page
+    return makeRes(page === 1
+      ? {
+          items: [{ slug: 'alpha', title: 'Alpha' }],
+          itemsTotal: 3,
+          curPage: 1,
+          pageTotal: 2,
+          nextPage: 2,
+        }
+      : {
+          items: [
+            { slug: 'constructor', title: 'Constructor' },
+            { slug: 'toString', title: 'To string' },
+          ],
+          itemsTotal: 3,
+          curPage: 2,
+          pageTotal: 2,
+          nextPage: null,
+        })
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 1))
+  const inst = w.WfXano.instances[0]
+  await inst.loadNext()
+  assert.ok(await waitFor(() => inst.getState().query.page === 2))
+  const ids = [...w.document.querySelectorAll('[wf-xano-item]')].map((card) => card.getAttribute('data-wf-xano-id'))
+  assert.deepEqual(ids, ['alpha', 'constructor', 'toString'])
+  assert.equal(inst.audit().ok, true, 'configured identity audit remains aligned')
+  console.log('PASS 105: append dedupe accepts prototype-named configured identities')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
