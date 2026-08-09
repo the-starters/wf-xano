@@ -829,6 +829,7 @@
   }
 
   function fillCard(card, item, preserveInteractive) {
+    updateLazyDetailsItem(card, item)
     // text / form-value binds (dot paths + optional wf-xano-format). Missing
     // values fall back through the comma-separated fields in order; epoch 0
     // is treated as missing only when a date format is active, e.g.
@@ -1282,8 +1283,31 @@
   }
 
   function updateLazyDetailsItem(card, item) {
-    cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
-      if (target.__wfXanoLazyDetails) target.__wfXanoLazyDetails.item = item
+    cardBindings(card, '[wf-xano-element="details-target"]').forEach(function (target) {
+      target.__wfXanoDetailsItem = item
+      if (target.__wfXanoLazyDetails) {
+        target.__wfXanoLazyDetails.item = item
+        target.__wfXanoLazyDetails.bound = false
+      }
+    })
+  }
+
+  function observeLazyDetails(instance) {
+    var list = instance.listEl || instance.template.parentNode
+    if (!list || typeof MutationObserver !== 'function') return
+    instance._lazyDetailsObserver = new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        var target = record.target
+        if (!target.matches('[wf-xano-element="details-target"][wf-xano-lazy-details]')) return
+        var card = target.closest('[data-wf-xano-nest-clone], [wf-xano-item]')
+        if (!card || !list.contains(card)) return
+        deferLazyDetails(card, target.__wfXanoDetailsItem, true)
+      })
+    })
+    instance._lazyDetailsObserver.observe(list, {
+      attributes: true,
+      attributeFilter: ['wf-xano-lazy-details'],
+      subtree: true,
     })
   }
 
@@ -1575,6 +1599,7 @@
     }
     this._ac = typeof AbortController === 'function' ? new AbortController() : null
     this._fetchAc = null
+    this._lazyDetailsObserver = null
 
     this.formEls = qa(root, 'form[wf-xano-form]').filter(function (form) { return ownerRoot(form) === root })
     // A form-only wrapper whose forms all explicitly opt out of auth does not
@@ -1625,6 +1650,7 @@
     this.bindControls()
     this.bindFocusRevalidation()
     this._registerForms(this.root)
+    if (this.template) observeLazyDetails(this)
     if (this.url) this.load()
     else this._transition({ status: 'success' }, 'init:form-only')
   }
@@ -3281,9 +3307,6 @@
       if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
         list.insertBefore(card, self._infiniteSentinel)
       } else list.appendChild(card)
-      // Verify after insertion too. Webflow can reconcile an authored marker
-      // after the pre-bind clone pass; in that case preserve and detach the
-      // already-bound closed subtree instead of leaving every card eager.
       deferLazyDetails(card, item, true)
       self._registerForms(card)
       appended.push(card)
@@ -3557,6 +3580,7 @@
     if (this._ac) this._ac.abort()
     if (this._fetchAc) this._fetchAc.abort()
     if (this._io) this._io.disconnect()
+    if (this._lazyDetailsObserver) this._lazyDetailsObserver.disconnect()
     window.clearTimeout(this._searchTimer)
     this._canonicalItems = []
     this._lastSuccessAt = 0

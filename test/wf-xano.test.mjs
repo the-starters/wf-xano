@@ -3661,17 +3661,20 @@ const FULL_PAGE1 = {
     </div></body></html>`, { runScripts: 'outside-only' })
   const w = dom.window
   w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
-  w.fetch = () => makeRes(PAGE([{ id: 1, detail: 'already bound' }], 1))
+  let detail = 'already bound'
+  w.fetch = () => makeRes(PAGE([{ id: 1, detail }], 1))
   w.eval(LIB)
   assert.ok(await waitFor(() => w.document.querySelector('[wf-xano-item]')), 'keyed card rendered')
   const card = w.document.querySelector('[wf-xano-item]')
   const panel = card.querySelector('[wf-xano-element="details-target"]')
   assert.equal(panel.querySelector('.detail').textContent, 'already bound', 'card starts eagerly bound')
   panel.setAttribute('wf-xano-lazy-details', '')
+  assert.ok(await waitFor(() => panel.childElementCount === 0), 'late marker detaches without another render')
+  detail = 'refreshed while detached'
   await w.WfXano.get('late-lazy').refresh()
-  assert.equal(panel.childElementCount, 0, 'late marker detaches the already-bound closed subtree')
+  assert.equal(panel.childElementCount, 0, 'keyed refresh keeps the closed subtree detached')
   card.querySelector('[wf-xano-element="details-toggle"]').click()
-  assert.equal(panel.querySelector('.detail').textContent, 'already bound', 'first open restores bound content')
+  assert.equal(panel.querySelector('.detail').textContent, 'refreshed while detached', 'first open binds the latest item')
   console.log('PASS 99e: late Webflow marker detaches an already-bound keyed card')
 }
 
