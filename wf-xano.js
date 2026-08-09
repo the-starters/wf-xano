@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.0'
+  var VERSION = '0.32.1'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -1266,12 +1266,18 @@
    *  user opens it. The detached fragment keeps the exact Designer markup but
    *  avoids binding and painting a large hidden subtree for every list row.
    *  Opt in on the details target with wf-xano-lazy-details. */
-  function deferLazyDetails(card, item) {
+  function deferLazyDetails(card, item, alreadyBound) {
     cardBindings(card, '[wf-xano-element="details-target"][wf-xano-lazy-details]').forEach(function (target) {
       if (target.__wfXanoLazyDetails) return
+      if (alreadyBound && target.getAttribute('aria-hidden') === 'false') return
       var fragment = document.createDocumentFragment()
       while (target.firstChild) fragment.appendChild(target.firstChild)
-      target.__wfXanoLazyDetails = { fragment: fragment, hydrated: false, item: item }
+      target.__wfXanoLazyDetails = {
+        fragment: fragment,
+        hydrated: false,
+        item: item,
+        bound: !!alreadyBound,
+      }
     })
   }
 
@@ -1286,7 +1292,7 @@
     if (!lazy || lazy.hydrated) return
     lazy.hydrated = true
     target.appendChild(lazy.fragment)
-    fillCard(target, lazy.item)
+    if (!lazy.bound) fillCard(target, lazy.item)
     wireShowMore(target)
     wireDetailsToggle(target)
     if (q(target, '[wf-xano-element="show-more"]')) {
@@ -3275,6 +3281,10 @@
       if (self._infiniteSentinel && self._infiniteSentinel.parentNode === list) {
         list.insertBefore(card, self._infiniteSentinel)
       } else list.appendChild(card)
+      // Verify after insertion too. Webflow can reconcile an authored marker
+      // after the pre-bind clone pass; in that case preserve and detach the
+      // already-bound closed subtree instead of leaving every card eager.
+      deferLazyDetails(card, item, true)
       self._registerForms(card)
       appended.push(card)
     })
@@ -3376,6 +3386,9 @@
       if (node.parentNode !== list || node.nextSibling !== anchor) list.insertBefore(node, anchor)
       anchor = node
     }
+    ordered.forEach(function (card, index) {
+      deferLazyDetails(card, items[index], true)
+    })
     ordered.forEach(function (card) { self._registerForms(card) })
     Object.keys(existing).forEach(function (id) { existing[id].remove() })
     if (focused && focused.isConnected && document.activeElement !== focused && typeof focused.focus === 'function') {
