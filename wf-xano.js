@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.2'
+  var VERSION = '0.32.3'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -928,7 +928,9 @@
       var pre = a.getAttribute('wf-xano-link-prefix') || ''
       var suf = a.getAttribute('wf-xano-link-suffix') || ''
       var v = get(item, field)
-      if (v != null) {
+      if (v == null || String(v).trim() === '') {
+        a.removeAttribute('href')
+      } else {
         var href = safeBoundUrl(pre + v + suf, 'href')
         if (href) a.setAttribute('href', href)
         else {
