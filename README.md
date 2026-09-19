@@ -112,6 +112,10 @@ Add to your page's custom code, **after** `memberstack-x` (only needed when usin
 Then add attributes in the Webflow Designer. That's it — the list renders on load.
 Public lists using `wf-xano-auth="none"` do not need `authBase`.
 
+For `wf-xano-link` bindings, a null, empty, or whitespace-only field removes the template's
+`href`. The rendered label or card remains visible but is not clickable until the API returns a
+real destination.
+
 Setting up from scratch? The **[Prompt Library](https://the-starters.github.io/wf-xano/prompts/)**
 has copy-paste AI prompts and checklists for the Xano side (tables, paged endpoint, auth) and
 ready-made Webflow structures (Embed snippets, native paste-into-Designer components).

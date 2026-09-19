@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.3 — 2026-09-19
+
+- Link bindings now remove `href` when the bound value is null, empty, or whitespace-only. This
+  keeps visible labels and cards non-clickable when their API record has no published destination,
+  and removes a previously rendered destination during keyed reconciliation.
+
 ## v0.32.2 — 2026-08-10
 
 - Append-mode lists now deduplicate overlapping remote pages by their configured identity key

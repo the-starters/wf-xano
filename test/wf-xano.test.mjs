@@ -3933,4 +3933,34 @@ const FULL_PAGE1 = {
   console.log('PASS 105: append dedupe accepts prototype-named configured identities')
 }
 
+// ---------- Test 106: blank link bindings stay visible but remove inherited and stale hrefs ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:companies" wf-xano-auth="none"
+         wf-xano-reconcile="keyed">
+      <a wf-xano-element="template" href="#" wf-xano-link="slug"
+         wf-xano-link-prefix="/companies/"><span wf-xano-bind="name"></span></a>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  let items = [
+    { id: 1, name: 'Published Co', slug: 'published-co' },
+    { id: 2, name: 'Custom Co', slug: '' },
+    { id: 3, name: 'Whitespace Co', slug: '   ' },
+    { id: 4, name: 'Null Co', slug: null },
+  ]
+  w.fetch = () => makeRes(PAGE(items, items.length))
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 4))
+  const hrefs = () => [...w.document.querySelectorAll('[wf-xano-item]')].map((card) => card.getAttribute('href'))
+  assert.deepEqual(hrefs(), ['/companies/published-co', null, null, null], 'blank values remove the template href')
+
+  items = items.map((item) => item.id === 1 ? { ...item, slug: '' } : item)
+  await w.WfXano.instances[0].refresh()
+  assert.deepEqual(hrefs(), [null, null, null, null], 'keyed reconciliation removes a destination that becomes blank')
+  assert.equal(w.document.querySelector('[wf-xano-item] span').textContent, 'Published Co', 'visible card content remains')
+  console.log('PASS 106: blank links remove inherited and stale hrefs without hiding content')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)
