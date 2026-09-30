@@ -239,11 +239,18 @@ prevents another account's rows from remaining visible or drifting from `getStat
 
 The handshake is optimized for cold boot (since v0.5.0):
 
-- The live session cookie fingerprint is the authoritative cache key. No member-profile lookup or
+- The exact live session cookie is the authoritative cache key. No member-profile lookup or
   local-storage identity is required, so neither can gate or mis-key the token trade.
 - The trade starts at script-parse time (`preAuth`, default on) instead of at the first list
   request, so its round-trip overlaps DOM-ready work. Set `WfXanoConfig.preAuth = false` on pages
   where every list is `wf-xano-auth="none"`.
+
+On `/starter-dashboard`, wf-xano may reuse a token from The Starters' read-only scheduling-auth
+bridge instead of starting its own trade. The provider must be `window.__tsSchedulingAuthTokenReuse`
+with `owner: "scheduling-auth"` and exact `authBase`/`tradePath` values matching
+`WfXanoConfig.authBase` and `WfXanoConfig.tradeTokenPath`; otherwise wf-xano ignores it and uses the
+normal no-store POST fallback. Provider misses or failures also fall back to POST, and a changed
+Memberstack cookie fails closed before any stale token or old-cookie fallback can be used.
 
 Requires the [memberstack-x](https://www.memberstack.com/) script to be loaded first, and a Xano
 endpoint that exchanges a Memberstack JWT for a Xano auth token — the
