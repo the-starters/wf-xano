@@ -13,7 +13,7 @@ function makeRes(body, ok = true, status = 200) {
 }
 const PAGE = (items, total, page = 1, pages = 1) => ({ items, itemsTotal: total, curPage: page, pageTotal: pages })
 
-async function waitFor(fn, ms = 2000) {
+async function waitFor(fn, ms = 5000) {
   const t0 = Date.now()
   while (Date.now() - t0 < ms) {
     if (fn()) return true
@@ -374,6 +374,220 @@ const FULL_PAGE1 = {
   assert.equal(authHeaders[0], 'Bearer xano-token', 'post-login refresh trades a fresh token (failure not cached)')
   assert.ok(!listEl.classList.contains('is-wf-xano-error'), 'error state cleared after successful retry')
   console.log('PASS D5: failed handshake not cached — retried after login')
+}
+
+// ---------- Test D6: dashboard lists reuse the scheduling-auth token ----------
+{
+  const markup = `<!doctype html><html><body>${[1, 2, 3].map((n) => `
+    <div wf-xano-list wf-xano-source="api:list-${n}" wf-xano-auth="memberstack">
+      <div wf-xano-template><h3 wf-xano-bind="title"></h3></div>
+    </div>`).join('')}</body></html>`
+  for (const pagePath of ['/starter-dashboard', '/starter-dashboard/']) {
+    const dom = new JSDOM(markup, { runScripts: 'outside-only', url: 'https://the-starters-3-0.webflow.io' + pagePath })
+    const w = dom.window
+    let providerCalls = 0
+    const trades = []
+    const listHeaders = []
+    const authBase = 'https://h.xano.io/api:auth'
+    w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase, tradeTokenPath: '/trade', debug: false }
+    w.$memberstackDom = { getMemberCookie: () => Promise.resolve('fake-cookie-a') }
+    w.__tsSchedulingAuthTokenReuse = {
+      owner: 'scheduling-auth', authBase, tradePath: '/trade',
+      getToken: (cookie) => {
+        providerCalls += 1
+        assert.equal(cookie, 'fake-cookie-a')
+        return Promise.resolve('shared-xano-token')
+      },
+    }
+    w.fetch = (url, opts) => {
+      if (url.endsWith('/trade')) {
+        trades.push({ url, opts })
+        return makeRes({ authToken: 'fallback-token' })
+      }
+      listHeaders.push(opts.headers.Authorization)
+      return makeRes(PAGE([], 0))
+    }
+    w.eval(LIB)
+    assert.ok(await waitFor(() => listHeaders.length === 3), pagePath + ' lists load')
+    assert.equal(providerCalls, 1, pagePath + ' has one shared provider call')
+    assert.equal(trades.length, 0, pagePath + ' has no second token trade')
+    assert.deepEqual(listHeaders, Array(3).fill('Bearer shared-xano-token'))
+  }
+  console.log('PASS D6: three dashboard lists reuse one scheduling-auth token with or without trailing slash')
+}
+
+// ---------- Test D7: provider scope and endpoint must match exactly ----------
+{
+  const authBase = 'https://h.xano.io/api:auth'
+  const cases = [
+    { name: 'wrong owner', page: '/starter-dashboard', owner: 'other', authBase, tradePath: '/trade' },
+    { name: 'wrong auth base', page: '/starter-dashboard', owner: 'scheduling-auth', authBase: 'https://other.xano.io/api:auth', tradePath: '/trade' },
+    { name: 'wrong trade path', page: '/starter-dashboard', owner: 'scheduling-auth', authBase, tradePath: '/other' },
+    { name: 'other page', page: '/hire', owner: 'scheduling-auth', authBase, tradePath: '/trade' },
+  ]
+  for (const testCase of cases) {
+    const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://the-starters-3-0.webflow.io' + testCase.page })
+    const w = dom.window
+    w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+    let providerCalls = 0
+    const trades = []
+    const listHeaders = []
+    w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase, tradeTokenPath: '/trade', preAuth: false, debug: false }
+    w.$memberstackDom = { getMemberCookie: () => Promise.resolve('fake-cookie-a') }
+    w.__tsSchedulingAuthTokenReuse = {
+      owner: testCase.owner, authBase: testCase.authBase, tradePath: testCase.tradePath,
+      getToken: () => { providerCalls += 1; return Promise.resolve('wrong-token') },
+    }
+    w.fetch = (url, opts) => {
+      if (url.endsWith('/trade')) {
+        trades.push({ url, opts })
+        return makeRes({ authToken: 'post-token' })
+      }
+      listHeaders.push(opts.headers.Authorization)
+      return makeRes(PAGE([], 0))
+    }
+    w.eval(LIB)
+    assert.ok(await waitFor(() => listHeaders.length === 1), testCase.name + ' list loads')
+    assert.equal(providerCalls, 0, testCase.name + ' provider is ignored')
+    assert.equal(trades.length, 1, testCase.name + ' uses POST fallback')
+    assert.equal(trades[0].opts.method, 'POST')
+    assert.equal(listHeaders[0], 'Bearer post-token')
+  }
+  console.log('PASS D7: dashboard provider scope, owner, and endpoint checks')
+}
+
+// ---------- Test D8: provider miss or rejection keeps the POST fallback ----------
+{
+  for (const result of ['miss', 'rejection']) {
+    const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://the-starters-3-0.webflow.io/starter-dashboard' })
+    const w = dom.window
+    w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+    const authBase = 'https://h.xano.io/api:auth'
+    const trades = []
+    const listHeaders = []
+    w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase, tradeTokenPath: '/trade', preAuth: false, debug: false }
+    w.$memberstackDom = { getMemberCookie: () => Promise.resolve('fake-cookie-a') }
+    w.__tsSchedulingAuthTokenReuse = {
+      owner: 'scheduling-auth', authBase, tradePath: '/trade',
+      getToken: () => result === 'miss' ? Promise.resolve(null) : Promise.reject(new Error('provider unavailable')),
+    }
+    w.fetch = (url, opts) => {
+      if (url.endsWith('/trade')) {
+        trades.push({ url, opts })
+        return makeRes({ authToken: 'post-token' })
+      }
+      listHeaders.push(opts.headers.Authorization)
+      return makeRes(PAGE([], 0))
+    }
+    w.eval(LIB)
+    assert.ok(await waitFor(() => listHeaders.length === 1), result + ' list loads')
+    assert.equal(trades.length, 1, result + ' falls back once')
+    assert.equal(trades[0].url, authBase + '/trade', 'cookie absent from trade URL')
+    assert.equal(trades[0].opts.method, 'POST')
+    assert.deepEqual(JSON.parse(trades[0].opts.body), { token: 'fake-cookie-a' })
+    assert.equal(listHeaders[0], 'Bearer post-token')
+  }
+  console.log('PASS D8: provider miss and rejection use secure POST fallback')
+}
+
+// ---------- Test D9: cookie changes while provider waits cannot use stale auth ----------
+{
+  for (const staleResult of [null, 'stale-token']) {
+    const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://the-starters-3-0.webflow.io/starter-dashboard' })
+    const w = dom.window
+    w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+    let cookie = 'fake-cookie-a'
+    let resolveFirst
+    let providerCalls = 0
+    const trades = []
+    const listHeaders = []
+    const authBase = 'https://h.xano.io/api:auth'
+    w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase, tradeTokenPath: '/trade', preAuth: false, debug: false }
+    w.$memberstackDom = { getMemberCookie: () => Promise.resolve(cookie) }
+    w.__tsSchedulingAuthTokenReuse = {
+      owner: 'scheduling-auth', authBase, tradePath: '/trade',
+      getToken: () => {
+        providerCalls += 1
+        return providerCalls === 1 ? new Promise((resolve) => { resolveFirst = resolve }) : Promise.resolve(null)
+      },
+    }
+    w.fetch = (url, opts) => {
+      if (url.endsWith('/trade')) {
+        trades.push(JSON.parse(opts.body).token)
+        return makeRes({ authToken: 'post-' + JSON.parse(opts.body).token })
+      }
+      listHeaders.push(opts.headers.Authorization)
+      return makeRes(PAGE([], 0))
+    }
+    w.eval(LIB)
+    assert.ok(await waitFor(() => resolveFirst), 'provider is waiting')
+    cookie = 'fake-cookie-b'
+    resolveFirst(staleResult)
+    const list = w.document.querySelector('[wf-xano-list]')
+    assert.ok(await waitFor(() => list.classList.contains('is-wf-xano-error')), 'stale session fails closed')
+    assert.deepEqual(trades, [], 'no POST with the old cookie')
+    assert.deepEqual(listHeaders, [], 'no list with the old token')
+    await list.__wfXano.refresh()
+    assert.deepEqual(trades, ['fake-cookie-b'], 'refresh uses only the new cookie')
+    assert.equal(listHeaders.at(-1), 'Bearer post-fake-cookie-b')
+  }
+  console.log('PASS D9: cookie change while provider waits blocks stale token and fallback')
+}
+
+// ---------- Test D10: equal 32-bit fingerprints do not share a cached token ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://x.test/' })
+  const w = dom.window
+  w.document.querySelector('[wf-xano-list]').setAttribute('wf-xano-auth', 'memberstack')
+  // These synthetic equal-length cookies collide under the old FNV-1a key.
+  const cookieA = 'fake-FEYWUWHJJCGE'
+  const cookieB = 'fake-ZCLPAVYQMKSO'
+  let cookie = cookieA
+  const trades = []
+  const listHeaders = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase: 'https://h.xano.io/api:auth', tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve(cookie) }
+  w.fetch = (url, opts) => {
+    if (url.endsWith('/trade')) {
+      const tradedCookie = JSON.parse(opts.body).token
+      trades.push(tradedCookie)
+      return makeRes({ authToken: 'post-' + tradedCookie })
+    }
+    listHeaders.push(opts.headers.Authorization)
+    return makeRes(PAGE([], 0))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => listHeaders.length === 1), 'first cookie loads')
+  cookie = cookieB
+  await w.WfXano.instances[0].refresh()
+  assert.deepEqual(trades, [cookieA, cookieB], 'each exact cookie owns a distinct token')
+  assert.equal(listHeaders.at(-1), 'Bearer post-' + cookieB)
+  console.log('PASS D10: exact cookie ownership survives a 32-bit hash collision')
+}
+
+// ---------- Test D11: a reused token keeps the existing 401 error state ----------
+{
+  const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://the-starters-3-0.webflow.io/starter-dashboard' })
+  const w = dom.window
+  const list = w.document.querySelector('[wf-xano-list]')
+  list.setAttribute('wf-xano-auth', 'memberstack')
+  const authBase = 'https://h.xano.io/api:auth'
+  const calls = []
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', authBase, tradeTokenPath: '/trade', preAuth: false, debug: false }
+  w.$memberstackDom = { getMemberCookie: () => Promise.resolve('fake-cookie-a') }
+  w.__tsSchedulingAuthTokenReuse = {
+    owner: 'scheduling-auth', authBase, tradePath: '/trade',
+    getToken: () => Promise.resolve('reused-token'),
+  }
+  w.fetch = (url, opts) => {
+    calls.push({ url, authorization: opts.headers.Authorization })
+    return makeRes({ message: 'unauthorized' }, false, 401)
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => list.classList.contains('is-wf-xano-error')), '401 remains an error')
+  assert.equal(calls.length, 1, 'reused token goes directly to one list request')
+  assert.equal(calls[0].authorization, 'Bearer reused-token')
+  console.log('PASS D11: reused token preserves 401 failure behavior')
 }
 
 // ---------- Test 1: pre-load callback queue (GA/Finsweet pattern) ----------
@@ -1483,7 +1697,7 @@ const FULL_PAGE1 = {
   await w.WfXano.instances[0].refresh()
   assert.equal(trades.length, 2, 'cookie change retrades even when member id is unchanged')
   assert.equal(authHeaders.at(-1), 'Bearer xano-jwt-b')
-  console.log('PASS 41: secure token POST + session-fingerprint invalidation')
+  console.log('PASS 41: secure token POST + exact-session invalidation')
 }
 
 // ---------- Test 42: GET avoids JSON preflight header; unsafe bound protocols are blocked ----------

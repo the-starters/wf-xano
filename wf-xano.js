@@ -21,7 +21,7 @@
  *   - Member-change token reset — dropping the cached Xano token when the
  *     Memberstack member changes, so a switched account can't inherit the
  *     previous member's data.
- *   - Parallel cold-boot auth — the live Memberstack session fingerprints
+ *   - Parallel cold-boot auth — the exact live Memberstack session owns
  *     the cached token and the trade pre-warms at script parse, so first
  *     render has no member-profile lookup or serial auth gate.
  *   - Root-element attribute handling — the card root is often the <a> (or
@@ -406,23 +406,16 @@
   // This handshake is the cold-boot critical path, so nothing here waits
   // that doesn't have to (measured 2026-07: a serial getCurrentMember ->
   // trade-token -> list chain cost ~1.2s before first render):
-  //   - The live session cookie fingerprints the cached token. No member
+  //   - The exact live session cookie owns the cached token. No member
   //     profile lookup is needed: the traded token derives from that cookie.
   //   - The trade is pre-warmed at script-parse time (see below), so the
   //     round-trip overlaps DOM-ready instead of the first list request.
   //   - A cached token is dropped whenever the live session cookie changes,
   //     covering account switches and JWT rotation even if localStorage lags.
-  var _auth = null // { session, token: Promise<string> }
+  var _auth = null // { session: Promise<exact cookie>, token: Promise<string> }
 
-  function sessionFingerprint(token) {
-    // Non-cryptographic, in-memory equality key. The JWT itself is never put
-    // into a URL, storage, logs, or the public API.
-    var h = 2166136261
-    for (var i = 0; i < token.length; i++) {
-      h ^= token.charCodeAt(i)
-      h = Math.imul(h, 16777619)
-    }
-    return String(h >>> 0) + ':' + token.length
+  function memberSessionChangedError() {
+    return Object.assign(new Error('Memberstack session changed during auth'), { auth: true })
   }
 
   function memberstackSession() {
@@ -465,16 +458,47 @@
     })
   }
 
-  /** Kick off member-id resolution and the token trade IN PARALLEL. */
+  // The dashboard's scheduling-auth bridge runs before this deferred library.
+  // Reuse only its owner-specific provider for this exact trade endpoint.
+  // Other pages and endpoints keep the standalone POST handshake.
+  function dashboardTokenProvider() {
+    if ((window.location.pathname.replace(/\/+$/, '') || '/') !== '/starter-dashboard') return null
+    if (String(CFG.tradeTokenMethod || 'POST').toUpperCase() !== 'POST') return null
+    var provider = window.__tsSchedulingAuthTokenReuse
+    if (!provider || provider.owner !== 'scheduling-auth') return null
+    if (provider.authBase !== AUTH_BASE || provider.tradePath !== TRADE_PATH) return null
+    return typeof provider.getToken === 'function' ? provider : null
+  }
+
+  async function reuseDashboardTokenOrTrade(msToken) {
+    var provider = dashboardTokenProvider()
+    if (!provider) return tradeToken(msToken)
+
+    // The cookie from memberstackSession() is the private owner key. A user
+    // switch while the provider waits must not send the old cookie in a POST
+    // fallback or use a token returned for the old account.
+    if ((await memberstackSession()) !== msToken) throw memberSessionChangedError()
+    var token = null
+    try {
+      token = await provider.getToken(msToken)
+    } catch (e) {
+      // The provider is optional. A same-session miss uses the POST trade.
+    }
+    if ((await memberstackSession()) !== msToken) throw memberSessionChangedError()
+    if (typeof token === 'string' && token) return token
+    return tradeToken(msToken)
+  }
+
+  /** Pre-warm a shared auth handshake for the current exact session. */
   function startAuth() {
     var session = memberstackSession()
     var auth = {
-      session: session.then(sessionFingerprint, function () {
+      session: session.catch(function () {
         return null
       }),
       token: null,
     }
-    auth.token = session.then(tradeToken).catch(function (err) {
+    auth.token = session.then(reuseDashboardTokenOrTrade).catch(function (err) {
       // A failed trade (logged out, endpoint down) must not poison the
       // cache — the next authed load retries a fresh handshake.
       if (_auth === auth) _auth = null
@@ -490,7 +514,7 @@
       // no Memberstack profile/localStorage metadata is trusted as identity.
       var cachedAuth = _auth
       var ownerSession = await cachedAuth.session
-      var liveSession = await memberstackSession().then(sessionFingerprint)
+      var liveSession = await memberstackSession()
       // Another concurrent list may already have replaced the shared auth
       // entry while this call awaited the session. Only the call that still
       // owns the stale entry performs the one-time account-change reset.
@@ -500,7 +524,20 @@
       }
     }
     if (!_auth) _auth = startAuth()
-    return _auth.token
+    var activeAuth = _auth
+    var token = await activeAuth.token
+    // The first check above can precede an in-flight provider or trade.
+    // Verify the exact owner again immediately before returning a token.
+    var returnOwnerSession = await activeAuth.session
+    var latestSession = await memberstackSession()
+    if (latestSession !== returnOwnerSession || _auth !== activeAuth) {
+      if (_auth === activeAuth) {
+        _auth = null
+        clearAuthenticatedStoreSnapshots(requestingInstance)
+      }
+      throw memberSessionChangedError()
+    }
+    return token
   }
 
   // Pre-warm the handshake at script-parse time — well before the DOM-ready
@@ -627,7 +664,7 @@
   }
 
   async function syncFavoriteSession() {
-    var current = await memberstackSession().then(sessionFingerprint)
+    var current = await memberstackSession()
     if (_favoriteSession != null && current !== _favoriteSession) resetFavoriteState()
     _favoriteSession = current
     return current
