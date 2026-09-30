@@ -3223,6 +3223,7 @@
     try {
       var headers = {}
       if (this.auth) headers.Authorization = 'Bearer ' + (await xanoToken(this))
+      if (seq !== this._seq) return
       var payload = {}
       var requestParams = this.requestParams()
       Object.keys(requestParams).forEach(function (k) {

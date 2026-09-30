@@ -590,6 +590,83 @@ const FULL_PAGE1 = {
   console.log('PASS D11: reused token preserves 401 failure behavior')
 }
 
+// ---------- Test D12: a superseded load must not send after shared auth resolves ----------
+{
+  for (const withAbortController of [true, false]) {
+    const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only', url: 'https://fixture.invalid/' })
+    const w = dom.window
+    const list = w.document.querySelector('[wf-xano-list]')
+    list.setAttribute('wf-xano-auth', 'memberstack')
+    list.setAttribute('wf-xano-source', 'opp30:starter/projects/mine')
+    if (!withAbortController) w.AbortController = undefined
+    const calls = []
+    let tradeCalls = 0
+    let releaseTrade
+    w.WfXanoConfig = {
+      xanoBase: 'https://fake.invalid', authBase: 'https://fake.invalid/api:auth',
+      tradeTokenPath: '/trade', preAuth: false, debug: false,
+    }
+    w.$memberstackDom = { getMemberCookie: () => Promise.resolve('fixture-session') }
+    w.fetch = (url, opts) => {
+      assert.equal(new URL(url).hostname, 'fake.invalid', 'all requests use fake fetch and fixture URLs')
+      if (url.endsWith('/trade')) {
+        tradeCalls++
+        return new Promise(resolve => { releaseTrade = () => resolve(makeRes('fixture-auth')) })
+      }
+      const call = { signal: opts.signal, aborted: false }
+      calls.push(call)
+      return new Promise((resolve, reject) => {
+        call.release = items => resolve(makeRes(PAGE(items, items.length)))
+        if (opts.signal) opts.signal.addEventListener('abort', () => {
+          call.aborted = true
+          reject(new w.DOMException('fixture request cancelled', 'AbortError'))
+        }, { once: true })
+      })
+    }
+    try {
+      w.eval(LIB)
+      assert.ok(await waitFor(() => list.__wfXano && tradeCalls === 1), 'boot load waits for fake auth')
+      const inst = list.__wfXano
+      const bootController = inst._fetchAc
+      const currentLoad = inst.setParam('status', 'Active')
+      const currentController = inst._fetchAc
+      assert.equal(calls.length, 0, 'auth gate holds both overlapping loads')
+      if (withAbortController) {
+        assert.notEqual(bootController, currentController, 'new load owns a different controller')
+        assert.equal(bootController.signal.aborted, true, 'new load cancels the superseded controller')
+      }
+      releaseTrade()
+      assert.ok(await waitFor(() => calls.length > 0), 'current load sends after auth resolves')
+      // Drain every waiter on the shared promise before counting fetches.
+      await new Promise(resolve => setTimeout(resolve, 0))
+      assert.equal(calls.length, 1, 'only the current load may send after shared auth resolves')
+      assert.equal(tradeCalls, 1, 'overlapping loads share the one fake auth trade')
+      if (withAbortController) assert.equal(calls[0].signal, currentController.signal, 'current request uses its controller')
+      else assert.equal(calls[0].signal, undefined, 'sequence ownership also works without AbortController')
+
+      const replacementLoad = inst.setParam('status', 'Completed')
+      assert.ok(await waitFor(() => calls.length === 2), 'later load still sends its current request')
+      if (withAbortController) {
+        assert.equal(calls[0].aborted, true, 'later load still cancels a pending current fetch')
+        assert.equal(calls[1].signal.aborted, false, 'replacement request stays active')
+      }
+      calls[1].release([{ id: 2, title: 'Latest project' }])
+      await replacementLoad
+      if (!withAbortController) calls[0].release([{ id: 1, title: 'Stale project' }])
+      await currentLoad
+      assert.deepEqual(
+        [...list.querySelectorAll('[wf-xano-item] h3')].map(el => el.textContent),
+        ['Latest project'], 'only the latest load renders, including when cancellation is unavailable',
+      )
+      assert.equal(list.getAttribute('aria-busy'), 'false', 'latest request clears the loader')
+      assert.ok(!list.classList.contains('is-wf-xano-error'), 'obsolete fetch cancellation does not create an error state')
+    } finally {
+      w.close()
+    }
+  }
+  console.log('PASS D12: superseded auth-gated loads skip fetch, latest render and cancellation stay correct')
+}
+
 // ---------- Test 1: pre-load callback queue (GA/Finsweet pattern) ----------
 {
   const dom = new JSDOM(BASIC_MARKUP, { runScripts: 'outside-only' })
