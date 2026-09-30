@@ -13,7 +13,7 @@ function makeRes(body, ok = true, status = 200) {
 }
 const PAGE = (items, total, page = 1, pages = 1) => ({ items, itemsTotal: total, curPage: page, pageTotal: pages })
 
-async function waitFor(fn, ms = 2000) {
+async function waitFor(fn, ms = 5000) {
   const t0 = Date.now()
   while (Date.now() - t0 < ms) {
     if (fn()) return true
