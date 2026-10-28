@@ -23,6 +23,7 @@ script executes before **or** after the library loads (the same pattern as
 | Member | Description |
 | --- | --- |
 | `version` | Library version string. |
+| `features` | Capability flags page code can check before it relies on a feature: `{ sharedGet, itemsPath }`. |
 | `instances` | Array of live [`Instance`](#the-instance-object)s. |
 | `push(fn)` | Queue (pre-boot) or immediately run (post-boot) `fn(WfXano)`. |
 | `get(key)` | The instance whose `wf-xano-instance` equals `key`, or `null`. |

@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.32.3'
+  var VERSION = '0.33.0'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -821,6 +821,34 @@
       /* UI rollback + event already handled */
     })
   }, true)
+
+  /* ============================ SHARED READS ========================== */
+  // Several lists on one page often read the same public endpoint with the
+  // same query. Unauthenticated GETs with an identical URL that are in flight
+  // at the same time share one network request. Only in-flight requests are
+  // shared: a later load or refresh always fetches fresh data. Each caller
+  // gets its own copy of the body, so hooks cannot mutate a sibling's data.
+  var _sharedGets = {}
+  function sharedGet(url) {
+    var pending = _sharedGets[url]
+    if (!pending) {
+      pending = fetch(url, { method: 'GET', headers: {}, cache: 'no-store' }).then(function (res) {
+        return res.json().catch(function () {
+          return null
+        }).then(function (body) {
+          return { ok: res.ok, status: res.status, data: body }
+        })
+      })
+      _sharedGets[url] = pending
+      var release = function () {
+        if (_sharedGets[url] === pending) delete _sharedGets[url]
+      }
+      pending.then(release, release)
+    }
+    return pending.then(function (shared) {
+      return { ok: shared.ok, status: shared.status, data: cloneStateValue(shared.data) }
+    })
+  }
 
   /* ============================ RESPONSE SHAPE ======================== */
   // Xano paged list -> { items, total, page, pages, hasMore }. Also tolerates
@@ -1575,6 +1603,9 @@
     this.url = resolveUrl(this.source)
     this.method = (root.getAttribute('wf-xano-method') || 'POST').toUpperCase()
     this.auth = root.getAttribute('wf-xano-auth') !== 'none'
+    // Optional dotted path to the item array inside the response body. Lists
+    // that render different slices of one response can then share one request.
+    this.itemsPath = String(root.getAttribute('wf-xano-items-path') || '').trim()
     this.perPage = positiveInt(root.getAttribute('wf-xano-per-page'), 20)
     this.pageWindow = positiveInt(root.getAttribute('wf-xano-page-window'), 5)
     // Boundary pages always shown at each edge (Finsweet page-boundary). With
@@ -3243,15 +3274,27 @@
         request.body = JSON.stringify(payload)
       }
 
-      var res = await fetch(url, request)
-      var data = await res.json().catch(function () {
-        return null
-      })
+      var res, data
+      if (this.method === 'GET' && !this.auth) {
+        // Public reads with the same URL share one in-flight request.
+        res = await sharedGet(url)
+        data = res.data
+      } else {
+        res = await fetch(url, request)
+        data = await res.json().catch(function () {
+          return null
+        })
+      }
       // A newer request started while this one was in flight — drop it.
       if (seq !== this._seq) return
       if (!res.ok) throw Object.assign(new Error('wf-xano ' + res.status), { status: res.status, data: data })
 
-      var result = normalize(data, this.perPage)
+      var listBody = data
+      if (this.itemsPath) {
+        var pathItems = get(data, this.itemsPath)
+        listBody = Array.isArray(pathItems) ? pathItems : []
+      }
+      var result = normalize(listBody, this.perPage)
       // Raw body kept for stat elements that bind response fields outside the
       // paged list (wf-xano-element="total" + wf-xano-field="<path>").
       result.raw = data
@@ -3737,6 +3780,8 @@
   // the callback immediately.
   window.WfXano = {
     version: VERSION,
+    // Capabilities page code may check before it relies on them.
+    features: { sharedGet: true, itemsPath: true },
     instances: instances,
     init: init,
     /** (Re)wire standalone show-more controls (non-list pages, or after another

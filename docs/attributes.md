@@ -344,7 +344,8 @@ Add these to the elements above to tune behavior.
 | `wf-xano-source` | `group:path` or full URL | — (required) | Xano endpoint. `opp30:brand/opportunities/list` → `{xanoBase}/api:opp30/brand/opportunities/list`. |
 | `wf-xano-instance` | any key | — | Instance key. See [scoping](#scoping--instance-keys). |
 | `wf-xano-method` | `POST`, `GET`, `PATCH`… | `POST` | HTTP method. `GET` sends params as a query string. |
-| `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints. |
+| `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints. Public `GET` wrappers whose request URLs are identical share one in-flight request. |
+| `wf-xano-items-path` | dotted path | — | Read the list items from this path in the response body (for example `tools`) instead of `items`. A missing or non-array value renders an empty list. Lists that show different slices of one response can share one request this way. |
 | `wf-xano-per-page` | number | `20` | Page size, sent as `per_page`. |
 | `wf-xano-page-window` | number | `5` | Numbered page buttons centered on the current page. |
 | `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
