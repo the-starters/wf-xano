@@ -27,8 +27,9 @@ The most useful response shape is:
 }
 ```
 
-`items` is required. Include `itemsTotal` or `pageTotal` for true numbered pagination. Load-more
-and infinite lists can work with `nextPage` alone. Raw arrays and a single object are also accepted,
+`items` is required unless the wrapper sets [`wf-xano-items-path`](attributes.md#settings) to read
+another array. Include `itemsTotal` or `pageTotal` for true numbered pagination. Load-more and
+infinite lists can work with `nextPage` alone. Raw arrays and a single object are also accepted,
 but they cannot describe full pagination state.
 
 ## 3. Public list
