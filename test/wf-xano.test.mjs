@@ -4254,4 +4254,79 @@ const FULL_PAGE1 = {
   console.log('PASS 106: blank links remove inherited and stale hrefs without hiding content')
 }
 
+// ---------- Test 107: public GET lists share one in-flight request; items-path picks a slice ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-instance="tools" wf-xano-source="g:taxonomy" wf-xano-method="GET"
+         wf-xano-auth="none" wf-xano-param-starter_id="7" wf-xano-items-path="tools">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-instance="tools-mobile" wf-xano-source="g:taxonomy" wf-xano-method="GET"
+         wf-xano-auth="none" wf-xano-param-starter_id="7" wf-xano-items-path="tools">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-instance="skills" wf-xano-source="g:taxonomy" wf-xano-method="GET"
+         wf-xano-auth="none" wf-xano-param-starter_id="7" wf-xano-items-path="skills">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-instance="missing" wf-xano-source="g:taxonomy" wf-xano-method="GET"
+         wf-xano-auth="none" wf-xano-param-starter_id="7" wf-xano-items-path="industries">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+      <div wf-xano-element="empty" style="display:none">none</div>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-instance="clients" wf-xano-source="g:taxonomy" wf-xano-method="GET"
+         wf-xano-auth="none" wf-xano-param-starter_id="7" wf-xano-param-kind="clients">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  const urls = []
+  w.fetch = (url) => {
+    urls.push(String(url))
+    if (/kind=clients/.test(url)) return makeRes({ items: [{ id: 'c1', name: 'Client' }] })
+    return makeRes({ items: [], tools: [{ id: 't1', name: 'Figma' }], skills: [{ id: 's1', name: 'Copy' }, { id: 's2', name: 'SEO' }] })
+  }
+  w.eval(LIB)
+  assert.deepEqual(w.WfXano.features, { sharedGet: true, itemsPath: true })
+  const names = (key) => {
+    const inst = w.WfXano.get(key)
+    return inst ? [...inst.root.querySelectorAll('[wf-xano-item] span')].map((el) => el.textContent) : []
+  }
+  assert.ok(await waitFor(() => names('clients').length === 1 && names('skills').length === 2))
+  assert.equal(urls.length, 2, 'four lists with one URL share one request; the distinct URL fetches once')
+  assert.deepEqual(names('tools'), ['Figma'])
+  assert.deepEqual(names('tools-mobile'), ['Figma'])
+  assert.deepEqual(names('skills'), ['Copy', 'SEO'])
+  assert.deepEqual(names('missing'), [], 'a missing path renders an empty list')
+  assert.ok(w.WfXano.get('missing').root.classList.contains('is-wf-xano-empty'))
+
+  await w.WfXano.get('tools').refresh()
+  assert.equal(urls.length, 3, 'a later refresh is not served from a finished shared request')
+  console.log('PASS 107: shared public GET + items-path slices')
+}
+
+// ---------- Test 108: authenticated and POST lists never share requests ----------
+{
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div wf-xano-element="wrapper" wf-xano-source="g:list" wf-xano-auth="none">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+    <div wf-xano-element="wrapper" wf-xano-source="g:list" wf-xano-auth="none">
+      <div wf-xano-element="template"><span wf-xano-bind="name"></span></div>
+    </div>
+  </body></html>`, { runScripts: 'outside-only' })
+  const w = dom.window
+  w.WfXanoConfig = { xanoBase: 'https://x.example', debug: false }
+  let calls = 0
+  w.fetch = () => {
+    calls += 1
+    return makeRes(PAGE([{ id: 1, name: 'A' }], 1))
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2))
+  assert.equal(calls, 2, 'POST lists keep one request each')
+  console.log('PASS 108: POST lists are not shared')
+}
+
 console.log(`\nAll wf-xano v${VERSION} tests passed.`)

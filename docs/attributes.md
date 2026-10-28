@@ -344,7 +344,8 @@ Add these to the elements above to tune behavior.
 | `wf-xano-source` | `group:path` or full URL | — (required) | Xano endpoint. `opp30:brand/opportunities/list` → `{xanoBase}/api:opp30/brand/opportunities/list`. |
 | `wf-xano-instance` | any key | — | Instance key. See [scoping](#scoping--instance-keys). |
 | `wf-xano-method` | `POST`, `GET`, `PATCH`… | `POST` | HTTP method. `GET` sends params as a query string. |
-| `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints. |
+| `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints; identical public `GET`s share one request (see [Requests](#requests)). |
+| `wf-xano-items-path` | dotted path | — | Read the list items from this path in the response body (for example `tools`) instead of `items`. A missing or non-array value renders an empty list. Lists that show different slices of one response can share one request this way. |
 | `wf-xano-per-page` | number | `20` | Page size, sent as `per_page`. |
 | `wf-xano-page-window` | number | `5` | Numbered page buttons centered on the current page. |
 | `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
@@ -407,6 +408,11 @@ The key is also the [URL-sync](#settings) prefix and the argument to `WfXano.get
 - Requests are **sequenced**: when loads overlap (debounced search + a filter click), a stale
   out-of-order response is dropped instead of rendering over the newest one; superseded fetches
   are aborted when supported.
+- Public `GET` wrappers (`wf-xano-auth="none"`) with an identical request URL share one in-flight
+  request, and each list gets its own copy of the body. A shared request is never aborted (one list
+  must not fail its siblings); sequencing still drops its result when it is stale. Nothing is
+  cached: a later load or refresh fetches again. Authenticated and non-`GET` requests are never
+  shared.
 - `POST` (default) sends `{...params, page, per_page}` as a JSON body — matching Xano's standard
   paged list inputs. Responses are normalized from Xano's `{items, itemsTotal, curPage, pageTotal}`
   shape (raw arrays and single objects also work).

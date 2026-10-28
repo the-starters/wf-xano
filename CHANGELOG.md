@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.33.0 — 2026-10-28
+
+- Public `GET` wrappers (`wf-xano-auth="none"`) with an identical request URL now share one
+  in-flight request. Each list gets its own copy of the body. A later load or refresh always
+  fetches again.
+- New `wf-xano-items-path` wrapper setting reads the list items from a named path in the response
+  body. Lists that show different slices of one response can share one request.
+- New `WfXano.features` capability flags (`sharedGet`, `itemsPath`).
+
 ## v0.32.3 — 2026-09-19
 
 - Link bindings now remove `href` when the bound value is null, empty, or whitespace-only. This
