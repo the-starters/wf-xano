@@ -3,7 +3,7 @@
 ## v0.33.1 — 2026-10-30
 
 - Replace-mode loads (filter, tab, page change, refresh) now hold the list's current height while
-  the new page is in flight, then release it right after render or on error. Stale cards are still
+  the new page is in flight, then release it right after render, on error, or on `destroy()`. Stale cards are still
   cleared at once. Content below the list no longer jumps up and back down during a filter change,
   and a click in that window no longer lands on a different card. Opt out per list with
   `wf-xano-hold-height="false"` on the root.

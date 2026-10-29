@@ -3719,6 +3719,7 @@
       })
     }
     if (this._infiniteSentinel) this._infiniteSentinel.remove()
+    this.releaseHeight()
     this.root.classList.remove('is-wf-xano-loading', 'is-wf-xano-error', 'is-wf-xano-empty')
     this.root.removeAttribute('aria-busy')
     delete this.root.__wfXano

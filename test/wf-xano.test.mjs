@@ -183,6 +183,38 @@ for (const optOut of [false, true]) {
   console.log('PASS B2b: replace-mode refetch holds list height' + (optOut ? ' (opt-out respected)' : ''))
 }
 
+// ---------- Test B2c: destroy() during an in-flight replace load releases the height hold ----------
+{
+  const dom = new JSDOM(FULL_MARKUP, { runScripts: 'outside-only' })
+  const w = dom.window
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return 480 } })
+  const calls = []
+  let releaseSecond
+  w.WfXanoConfig = { xanoBase: 'https://h.xano.io', debug: false }
+  w.fetch = (url, opts) => {
+    calls.push(JSON.parse(opts.body))
+    if (calls.length === 1) return makeRes(FULL_PAGE1)
+    return new Promise((res) => {
+      releaseSecond = () => res({ ok: true, status: 200, json: () => Promise.resolve(PAGE([], 0)) })
+    })
+  }
+  w.eval(LIB)
+  assert.ok(await waitFor(() => w.document.querySelectorAll('[wf-xano-item]').length === 2), 'initial 2 items')
+  const root = w.document.querySelector('[wf-xano-list]')
+  const inst = root.__wfXano
+  const list = inst.listEl || inst.template.parentNode
+  list.style.minHeight = '10px'
+  inst.setParam('status', 'Closed')
+  assert.ok(await waitFor(() => calls.length === 2), 'replace fetch issued')
+  assert.equal(list.style.minHeight, '480px', 'height held while the request is in flight')
+  w.WfXano.destroy(root)
+  assert.equal(list.style.minHeight, '10px', 'destroy restores the previous inline min-height')
+  releaseSecond()
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(list.style.minHeight, '10px', 'superseded load does not touch the restored min-height')
+  console.log('PASS B2c: destroy() during a replace load releases the height hold')
+}
+
 // ---------- Test B3: append-mode load keeps prior items in place ----------
 {
   const dom = new JSDOM(FULL_MARKUP, { runScripts: 'outside-only' })
