@@ -346,7 +346,7 @@ Add these to the elements above to tune behavior.
 | `wf-xano-method` | `POST`, `GET`, `PATCH`… | `POST` | HTTP method. `GET` sends params as a query string. |
 | `wf-xano-auth` | `memberstack`, `none` | `memberstack` | `memberstack` trades the Memberstack JWT for a Xano auth token (cached; reset when the member changes). `none` for public endpoints; identical public `GET`s share one request (see [Requests](#requests)). |
 | `wf-xano-items-path` | dotted path | — | Read the list items from this path in the response body (for example `tools`) instead of `items`. A missing or non-array value renders an empty list. Lists that show different slices of one response can share one request this way. |
-| `wf-xano-hold-height` | `false` | on | During replace-mode reloads (filter, search, sort, page change), the list keeps its current height via an inline `min-height` until the new page renders or the load fails, so content below does not jump. Stale cards are still cleared immediately. Append loads and keyed lists are unaffected. Set `false` to opt out. |
+| `wf-xano-hold-height` | `false` | on | During replace-mode reloads (filter, tab, search, sort, page change, refresh), the list keeps its current height via an inline `min-height` until the new page renders, the load fails, or the list is destroyed, so content below does not jump. Stale cards are still cleared immediately. Append loads and keyed lists are unaffected. Set `false` to opt out. |
 | `wf-xano-per-page` | number | `20` | Page size, sent as `per_page`. |
 | `wf-xano-page-window` | number | `5` | Numbered page buttons centered on the current page. |
 | `wf-xano-page-boundary` | number | `1` | Pages always shown pinned at each edge (with `page-dots`, gaps become ellipses). |
