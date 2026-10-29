@@ -72,7 +72,7 @@
   if (window.WfXano && !Array.isArray(window.WfXano)) return
   var _queued = Array.isArray(window.WfXano) ? window.WfXano.slice() : []
 
-  var VERSION = '0.33.0'
+  var VERSION = '0.33.1'
   var CFG = window.WfXanoConfig || {}
   // Never silently send another project's requests to The Starters' Xano
   // workspace. A missing xanoBase falls back to the page origin so relative
@@ -3214,6 +3214,26 @@
     // is-wf-xano-empty is decided in render()
   }
 
+  /** Replace-mode loads clear the old cards before the new page lands. Hold
+   *  the list's current height meanwhile so content below it does not jump up
+   *  and back down (layout shift) while the request is in flight. render()
+   *  then changes the height at most once. Opt out per list with
+   *  wf-xano-hold-height="false" on the root. */
+  Instance.prototype.holdHeight = function (listEl) {
+    if (!listEl || this._heldHeight || this.root.getAttribute('wf-xano-hold-height') === 'false') return
+    var height = listEl.offsetHeight
+    if (!(height > 0)) return
+    this._heldHeight = { el: listEl, previous: listEl.style.minHeight }
+    listEl.style.minHeight = height + 'px'
+  }
+
+  Instance.prototype.releaseHeight = function () {
+    var held = this._heldHeight
+    if (!held) return
+    this._heldHeight = null
+    held.el.style.minHeight = held.previous
+  }
+
   Instance.prototype.load = async function (opts) {
     if (!this.ok) return
     var append = !!(opts && opts.append)
@@ -3245,6 +3265,7 @@
     // items by design.
     if (!append && !this.keyed) {
       var listNow = this.listEl || this.template.parentNode
+      this.holdHeight(listNow)
       qa(listNow, '[wf-xano-item]').forEach(function (c) {
         c.remove()
       })
@@ -3320,6 +3341,7 @@
         result.items = uniqueAppendItems(this._state.data.items, result.items, this.keyField)
       }
       this.render(result, append)
+      this.releaseHeight()
       this.setState('idle')
       this._loading = false
       this._lastResult = result
@@ -3360,6 +3382,7 @@
       if (seq !== this._seq) return
       this._loading = false
       console.error('[wf-xano] load failed', this.source, err)
+      this.releaseHeight()
       this.setState('error')
       if (append) {
         // Keep already-rendered pages and make the failed page retryable.
@@ -3696,6 +3719,7 @@
       })
     }
     if (this._infiniteSentinel) this._infiniteSentinel.remove()
+    this.releaseHeight()
     this.root.classList.remove('is-wf-xano-loading', 'is-wf-xano-error', 'is-wf-xano-empty')
     this.root.removeAttribute('aria-busy')
     delete this.root.__wfXano
